@@ -409,7 +409,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                         className="text-[10px] sm:text-[11px] font-semibold text-zinc-950 dark:text-zinc-950 bg-zinc-100 dark:bg-white hover:bg-zinc-200 dark:hover:bg-zinc-100 rounded-xl px-3.5 py-2 flex items-center gap-1.5 transition-all shadow-sm border border-zinc-300 dark:border-transparent cursor-pointer pointer-events-auto"
                       >
                         <Sparkles className="w-3.5 h-3.5 text-zinc-800" />
-                        Deconstruir con IA de Sitiens
+                        Deconstruir con IA de Sintiens
                       </button>
                     </div>
                   </motion.div>

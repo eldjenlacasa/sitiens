@@ -72,7 +72,7 @@ export default function App() {
                 <circle cx="12" cy="10.5" r="2.5" className="fill-white dark:fill-zinc-950 stroke-purple-500 dark:stroke-purple-400" strokeWidth="1.2" />
               </svg>
             </div>
-            <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">SITIENS</h1>
+            <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">SINTIENS</h1>
           </div>
 
           {/* Quick tab controllers & Theme Toggle */}
@@ -83,7 +83,7 @@ export default function App() {
                   { id: "grafo", label: "Conceptos" },
                   { id: "dialectica", label: "Tesis & Dilemas" },
                   { id: "calculadora", label: "El Cuantificador" },
-                  { id: "validador", label: "Sitiens IA" }
+                  { id: "validador", label: "Sintiens IA" }
                 ] as { id: TabType; label: string }[]
               ).map((tab) => (
                 <button
@@ -241,7 +241,7 @@ export default function App() {
         <div id="footer-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[11px] font-mono text-zinc-500 dark:text-zinc-600">
           <div className="flex items-center gap-1.5">
             <Heart className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-700" />
-            <span>Sitiens es un proyecto educativo de libre deconstrucción moral.</span>
+            <span>Sintiens es un proyecto educativo de libre deconstrucción moral.</span>
           </div>
           <div>
             <span>Nutrido socráticamente con neurobiología y física de ecosistemas.</span>
@@ -256,7 +256,7 @@ export default function App() {
             { id: "grafo", label: "El Grafo", icon: Network },
             { id: "dialectica", label: "Tesis", icon: Scale },
             { id: "calculadora", label: "Impacto", icon: Activity },
-            { id: "validador", label: "Sitiens IA", icon: Sparkles }
+            { id: "validador", label: "Sintiens IA", icon: Sparkles }
           ] as { id: TabType; label: string; icon: any }[]
         ).map((tab) => {
           const Icon = tab.icon;

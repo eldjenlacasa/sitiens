@@ -40,7 +40,7 @@ app.post("/api/analyze-argument", async (req, res) => {
     }
 
     const ai = getAiClient();
-    const systemPrompt = `Eres la Inteligencia Artificial "Sitiens Dialéctica", un motor de análisis filosófico-científico en español. Tu objetivo es realizar una deconstrucción socrática, científica y bioética laica de los argumentos, excusas, justificaciones o dogmas que utiliza el ser humano para consumir y explotar animales no humanos.
+    const systemPrompt = `Eres la Inteligencia Artificial "Sintiens Dialéctica", un motor de análisis filosófico-científico en español. Tu objetivo es realizar una deconstrucción socrática, científica y bioética laica de los argumentos, excusas, justificaciones o dogmas que utiliza el ser humano para consumir y explotar animales no humanos.
 Analiza el argumento introducido aplicando conceptos de neurobiología de la sintiencia, termodinámica de sistemas de recursos, y lógica filosófica laica (por ejemplo, identificando falacias naturales, paradoja de la carne, sesgos egoístas, etc.).
 Mantén un tono clínico, profundo, intelectual, respetuoso pero rigurosamente analítico y objetivo. No utilices marketing, adjetivos floridos ni halagos.
 Devuelve tu diagnóstico EXACTAMENTE en formato JSON conforme a la estructura de esquema solicitada. Todo el contenido generado en el JSON debe estar en idioma Español.`;
@@ -122,7 +122,7 @@ Devuelve tu diagnóstico EXACTAMENTE en formato JSON conforme a la estructura de
     res.json(payload);
   } catch (err: any) {
     console.error("Gemini Error:", err);
-    res.status(500).json({ error: err?.message || "Algo salió mal procesando tu argumento con la Inteligencia de Sitiens." });
+    res.status(500).json({ error: err?.message || "Algo salió mal procesando tu argumento con la Inteligencia de Sintiens." });
   }
 });
 

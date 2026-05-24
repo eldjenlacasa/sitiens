@@ -614,7 +614,7 @@ export default function NetworkGraph() {
         <div>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase transition-colors">
-              Grafo de Interconexiones de Sitiens
+              Grafo de Interconexiones de Sintiens
             </h3>
             <div className="flex items-center gap-2">
               <button

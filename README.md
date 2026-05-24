@@ -1,8 +1,8 @@
-# Sitiens — ¿Qué vidas importan?
+# Sintiens — ¿Qué vidas importan?
 
 > Un análisis crítico sobre nuestra relación con los animales y los axiomas que la definen.
 
-**Sitiens** es una iniciativa laica de deconstrucción moral y bioética que busca examinar, mediante una metodología socrática y evidencias científicas de neurobiología y termodinámica de ecosistemas, los dogmas culturales sobre el consumo y la consideración moral hacia las demás especies sintientes.
+**Sintiens** es una iniciativa laica de deconstrucción moral y bioética que busca examinar, mediante una metodología socrática y evidencias científicas de neurobiología y termodinámica de ecosistemas, los dogmas culturales sobre el consumo y la consideración moral hacia las demás especies sintientes.
 
 ---
 
@@ -28,7 +28,7 @@ Una calculadora interactiva diseñada para estimar a escala anual el impacto dir
 - **Superficie Forestal Deforestada** (m² de selva aludida).
 - **Cereal Desperdiciado** (Ineficiencia nutritiva de piensos forrajeros).
 
-### 🧠 4. Sitiens IA (Decompresor de Axiomas)
+### 🧠 4. Sintiens IA (Decompresor de Axiomas)
 Una herramienta interactiva impulsada por Inteligencia Artificial que recibe cualquier argumento o justificación moral personal, desglosa los sesgos de forma socrática, localiza los **Axiomas Implícitos No Examinados** que sustentan el razonamiento y concluye con una pregunta de reflexión profunda.
 
 ---
@@ -41,7 +41,7 @@ Una herramienta interactiva impulsada por Inteligencia Artificial que recibe cua
 ### Pasos para iniciar el servidor
 1. Abre tu terminal de **PowerShell** en Windows y navega a la carpeta de tu proyecto:
    ```powershell
-   cd C:\Users\ger4s\antigravity\Sitiens
+   cd C:\Users\ger4s\antigravity\Sintiens
    ```
 2. Instala los paquetes y dependencias (si tienes las políticas de script bloqueadas en PowerShell, usa `.cmd`):
    ```powershell

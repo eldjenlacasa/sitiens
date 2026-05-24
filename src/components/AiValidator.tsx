@@ -70,7 +70,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
       const response = await fetch("/api/analyze-argument", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ argument: finalVal, context: "Sitiens AI Validator" })
+        body: JSON.stringify({ argument: finalVal, context: "Sintiens AI Validator" })
       });
 
       if (!response.ok) {
@@ -100,7 +100,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
             Descompresor de Axiomas No Examinados
           </h3>
           <p className="text-zinc-600 dark:text-zinc-400 text-sm font-light leading-relaxed">
-            Escribe cualquier argumento, justificación, dogma o excusa que utilices (o escuches) para continuar consumiendo animales. La Inteligencia Artificial Sitiens, equipada con datos empíricos de neurobiología, termodinámica y bioética laica, deconstruirá críticamente su validez lógica y expondrá sus sesgos de forma socrática.
+            Escribe cualquier argumento, justificación, dogma o excusa que utilices (o escuches) para continuar consumiendo animales. La Inteligencia Artificial Sintiens, equipada con datos empíricos de neurobiología, termodinámica y bioética laica, deconstruirá críticamente su validez lógica y expondrá sus sesgos de forma socrática.
           </p>
         </div>
         <div className="md:col-span-4 flex flex-wrap gap-2 justify-end">
@@ -163,7 +163,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
           <Loader2 className="w-10 h-10 animate-spin text-zinc-400 dark:text-zinc-600" />
           <div className="space-y-1">
             <h4 className="text-sm font-semibold text-zinc-900 dark:text-white tracking-tight">Diseccionando premisas lógicas...</h4>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400 font-light max-w-sm">Evaluando nocicepción, termodinámica y buscando sesgos lógicos con la IA de Sitiens.</p>
+            <p className="text-xs text-zinc-500 dark:text-zinc-400 font-light max-w-sm">Evaluando nocicepción, termodinámica y buscando sesgos lógicos con la IA de Sintiens.</p>
           </div>
         </div>
       )}
@@ -195,7 +195,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
               <div className="bg-zinc-50/50 dark:bg-zinc-900/35 border-b border-zinc-200 dark:border-zinc-800 p-6 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 transition-colors">
                 <div className="space-y-1">
                   <span className="text-[10px] font-mono tracking-widest text-zinc-500 dark:text-zinc-400 uppercase flex items-center gap-1 font-bold">
-                    <Workflow className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-500" /> DIAGNÓSTICO DIALÉCTICO SITIENS
+                    <Workflow className="w-3.5 h-3.5 text-zinc-500 dark:text-zinc-500" /> DIAGNÓSTICO DIALÉCTICO SINTIENS
                   </span>
                   <h3 className="text-lg font-bold text-zinc-900 dark:text-white tracking-tight leading-normal font-serif">
                     &ldquo;{analysis.argumentSummary}&rdquo;
@@ -307,7 +307,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
                 </div>
                 <div className="flex items-center justify-center gap-1.5 text-zinc-500 dark:text-zinc-400 text-[10px] font-mono tracking-widest uppercase">
                   <Sparkles className="w-3 h-3 text-amber-600 dark:text-amber-500" />
-                  PREGUNTA SOCRÁTICA FINAL SITIENS:
+                  PREGUNTA SOCRÁTICA FINAL SINTIENS:
                 </div>
                 <p className="text-sm md:text-base font-serif italic text-zinc-900 dark:text-zinc-100 max-w-2xl mx-auto leading-relaxed transition-colors">
                   &ldquo;{analysis.alternativeReflection}&rdquo;
