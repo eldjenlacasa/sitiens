@@ -41,7 +41,7 @@ Una herramienta interactiva impulsada por Inteligencia Artificial que recibe cua
 ### Pasos para iniciar el servidor
 1. Abre tu terminal de **PowerShell** en Windows y navega a la carpeta de tu proyecto:
    ```powershell
-   cd C:\Users\ger4s\antigravity\Sintiens
+   cd C:\Users\ger4s\antigravity\sintiens
    ```
 2. Instala los paquetes y dependencias (si tienes las políticas de script bloqueadas en PowerShell, usa `.cmd`):
    ```powershell
@@ -58,3 +58,5 @@ Una herramienta interactiva impulsada por Inteligencia Artificial que recibe cua
 
 ## ☁️ Despliegue en la Nube (Hosting)
 Este proyecto está configurado para desplegarse mediante integración continua en **Vercel** o **Netlify**. Cada cambio que se empuje a la rama `main` en GitHub actualizará el enlace público del sitio de manera automática en menos de un minuto.
+
+

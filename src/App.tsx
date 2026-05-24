@@ -104,7 +104,7 @@ export default function App() {
                 <circle cx="12" cy="10.5" r="2.5" className="fill-white dark:fill-zinc-950 stroke-purple-500 dark:stroke-purple-400" strokeWidth="1.2" />
               </svg>
             </div>
-            <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">SINTIENS</h1>
+            <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">Sintiens</h1>
           </div>
 
           {/* Quick tab controllers & Theme Toggle */}
@@ -355,3 +355,5 @@ export default function App() {
     </div>
   );
 }
+
+

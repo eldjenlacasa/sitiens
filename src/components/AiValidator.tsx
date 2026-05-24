@@ -70,7 +70,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
       const response = await fetch("/api/analyze-argument", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ argument: finalVal, context: "Sintiens AI Validator" })
+        body: JSON.stringify({ argument: finalVal, context: "sintiens AI Validator" })
       });
 
       if (!response.ok) {
@@ -321,3 +321,5 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
     </div>
   );
 }
+
+

@@ -543,12 +543,11 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
             <ul className="space-y-2 text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-light select-text">
               {milestone.scientificFacts.map((fact, i) => (
                 <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-800/40 transition-colors">
-                  <span className="text-zinc-450 dark:text-zinc-650 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
-                  <span>{renderTextWithReferences(fact, milestone.references)}</span>
+                  <span className="text-zinc-450 dark:text-zinc-655 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
+                  <span><TextRenderer text={fact} references={milestone.references} /></span>
                 </li>
               ))}
             </ul>
-          </div>
 
           {/* Bibliography references */}
           {milestone.references && milestone.references.length > 0 && (
@@ -1051,7 +1050,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                       className="space-y-4 pt-4 border-t border-zinc-100 dark:border-zinc-900 text-xs leading-relaxed select-text font-sans"
                                     >
                                       <div className="text-zinc-655 dark:text-zinc-350 font-light leading-relaxed whitespace-pre-line bg-zinc-50/50 dark:bg-zinc-950/20 p-3.5 rounded-xl border border-zinc-200/30 dark:border-zinc-900/30">
-                                        {renderTextWithReferences(milestone.longDesc, milestone.references)}
+                                        <TextRenderer text={milestone.longDesc} references={milestone.references} />
                                       </div>
 
                                       <div className="space-y-2">
@@ -1062,7 +1061,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                           {milestone.scientificFacts.map((fact, index) => (
                                             <li key={index} className="flex gap-2.5 p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-800/40 bg-white/30 dark:bg-zinc-955/10 font-light text-zinc-600 dark:text-zinc-400">
                                               <span className="text-purple-500 font-mono font-bold select-none">[{index + 1}]</span>
-                                              <span>{renderTextWithReferences(fact, milestone.references)}</span>
+                                              <span><TextRenderer text={fact} references={milestone.references} /></span>
                                             </li>
                                           ))}
                                         </ul>
@@ -1476,3 +1475,5 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
     </div>
   );
 }
+
+

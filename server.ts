@@ -34,20 +34,32 @@ app.use(express.json());
 // API routes FIRST
 app.post("/api/analyze-argument", async (req, res) => {
   try {
-    const { argument } = req.body;
+    const { argument, mode } = req.body;
     if (!argument || typeof argument !== "string" || !argument.trim()) {
       return res.status(400).json({ error: "El argumento ingresado está vacío o no es válido." });
     }
 
     const ai = getAiClient();
-    const systemPrompt = `Eres la Inteligencia Artificial "Sintiens Dialéctica", un motor de análisis filosófico-científico en español. Tu objetivo es realizar una deconstrucción socrática, científica y bioética laica de los argumentos, excusas, justificaciones o dogmas que utiliza el ser humano para consumir y explotar animales no humanos.
-Analiza el argumento introducido aplicando conceptos de neurobiología de la sintiencia, termodinámica de sistemas de recursos, y lógica filosófica laica (por ejemplo, identificando falacias naturales, paradoja de la carne, sesgos egoístas, etc.).
-Mantén un tono clínico, profundo, intelectual, respetuoso pero rigurosamente analítico y objetivo. No utilices marketing, adjetivos floridos ni halagos.
-Devuelve tu diagnóstico EXACTAMENTE en formato JSON conforme a la estructura de esquema solicitada. Todo el contenido generado en el JSON debe estar en idioma Español.`;
+    let systemPrompt = `Eres la Inteligencia Artificial "Sintiens Dialéctica", un motor de análisis filosófico-científico en español. Tu objetivo es realizar una deconstrucción socrática, científica y bioética laica de los argumentos, reflexiones, dudas o justificaciones que utiliza el ser humano para consumir y explotar animales no humanos.
+Analiza la premisa o pregunta introducida aplicando conceptos de neurobiología de la sintiencia, termodinámica de sistemas de recursos y lógica filosófica laica.
+Devuelve tu diagnóstico EXACTAMENTE en formato JSON conforme a la estructura de esquema solicitada. Todo el contenido generado en el JSON debe estar en idioma Español.
+
+`;
+
+    if (mode === "socratic") {
+      systemPrompt += `MODO SOCRÁTICO PURO: Tu tono debe ser extremadamente socrático e inquisitivo. Conduce a la reflexión a través de ironías dialécticas implícitas. Pon especial énfasis en la contradicción interna de la justificación, haciéndole preguntas incisivas y breves. El análisis científico debe deconstruir las premisas erróneas exponiendo sus contradicciones lógicas fundamentales de forma ágil y perspicaz.`;
+    } else if (mode === "empathic") {
+      systemPrompt += `MODO DIVULGACIÓN EMPÁTICA: Tu tono debe ser cálido, sumamente comprensivo, pedagógico y educador, evitando sonar clínico o confrontativo. Utiliza analogías cotidianas y accesibles. Apela al potencial empático humano y la compasión natural, estructurando los argumentos científicos de manera muy clara, divulgativa y libre de jerga obtusa.`;
+    } else if (mode === "thermodynamic") {
+      systemPrompt += `MODO TERMODINÁMICA RADICAL: Tu enfoque debe ser de física aplicada e ingeniería ecológica pura. Analiza la premisa desde las leyes de la física, la entropía de los sistemas cerrados, la drástica ineficiencia del paso trófico de calorías (pérdida de hasta un 90% por metabolismo animal), el uso de suelo y agua, y los límites biosféricos. Tu tono debe ser de una sobriedad matemática implacable y fría.`;
+    } else {
+      // Default: Clinical
+      systemPrompt += `MODO DIALÉCTICA CLÍNICA: Mantén un tono clínico, profundo, altamente intelectual, respetuoso pero rigurosamente analítico, objetivo y académico. No utilices adjetivos floridos, sentimentalismos ni halagos comerciales. Utiliza conceptos sólidos de neurobiología, ética laica formal y ecología de sistemas complejos.`;
+    }
 
     const response = await ai.models.generateContent({
       model: "gemini-3.5-flash",
-      contents: `Deconstruye críticamente el siguiente argumento: "${argument}"`,
+      contents: `Analiza y deconstruye críticamente la siguiente premisa: "${argument}"`,
       config: {
         systemInstruction: systemPrompt,
         responseMimeType: "application/json",
@@ -148,3 +160,5 @@ async function startServer() {
 }
 
 startServer();
+
+
