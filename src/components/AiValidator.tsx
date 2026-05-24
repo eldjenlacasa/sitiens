@@ -112,20 +112,20 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
 
       {/* Input Form Panel */}
       <div className="bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md border border-zinc-200 dark:border-zinc-800/80 p-5 lg:p-6 rounded-3xl space-y-4 transition-all duration-300 shadow-sm dark:shadow-none">
-        <div className="flex gap-2">
+        <div className="flex flex-col sm:flex-row gap-3">
           <input
             type="text"
             value={userInput}
             onChange={(e) => setUserInput(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") handleOnSubmit(""); }}
             placeholder="Introduce una excusa: ej. 'Los leones consumen carne y es natural que hagamos lo mismo'..."
-            className="flex-1 bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-zinc-500 dark:focus:border-zinc-700 rounded-2xl px-5 py-4 text-xs font-sans placeholder-zinc-400 dark:placeholder-zinc-600 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-700/50 transition-all shadow-sm dark:shadow-none"
+            className="flex-1 bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-zinc-500 dark:focus:border-zinc-700 rounded-2xl px-5 py-4 text-xs font-sans placeholder-zinc-400 dark:placeholder-zinc-600 text-zinc-900 dark:text-white outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-700/50 transition-all shadow-sm dark:shadow-none w-full"
             disabled={loading}
           />
           <button
             onClick={() => handleOnSubmit("")}
             disabled={loading || !userInput.trim()}
-            className="px-6 py-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-semibold text-xs flex items-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-md dark:shadow-none"
+            className="px-6 py-4 rounded-2xl bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-semibold text-xs flex items-center justify-center gap-2 transition-all disabled:opacity-40 disabled:cursor-not-allowed cursor-pointer shadow-md dark:shadow-none w-full sm:w-auto shrink-0"
           >
             {loading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
             {loading ? "Analizando" : "Someter"}
@@ -137,7 +137,7 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
           <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-500 uppercase tracking-widest block font-bold">
             Ejemplos clásicos para testear:
           </span>
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap gap-2 w-full">
             {PRESET_EXCUSAS.map((preset, i) => (
               <button
                 key={i}
@@ -147,10 +147,10 @@ export default function AiValidator({ argumentToAnalyze, clearArgument }: AiVali
                   handleOnSubmit(preset);
                 }}
                 disabled={loading}
-                className="text-xs px-3.5 py-2 rounded-xl bg-white hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-950 dark:hover:bg-zinc-900 dark:hover:text-white text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800/80 transition-all flex items-center gap-1.5 hover:border-zinc-500 dark:hover:border-zinc-700 text-left cursor-pointer shadow-sm dark:shadow-none"
+                className="text-xs px-3.5 py-2.5 rounded-xl bg-white hover:bg-zinc-50 hover:text-zinc-900 dark:bg-zinc-950 dark:hover:bg-zinc-900 dark:hover:text-white text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800/80 transition-all flex items-start gap-2 hover:border-zinc-500 dark:hover:border-zinc-700 text-left cursor-pointer shadow-sm dark:shadow-none w-full sm:w-auto whitespace-normal break-words"
               >
-                <PlusCircle className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 shrink-0" />
-                {preset}
+                <PlusCircle className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500 shrink-0 mt-0.5" />
+                <span className="leading-relaxed">{preset}</span>
               </button>
             ))}
           </div>

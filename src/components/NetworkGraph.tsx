@@ -137,6 +137,7 @@ export default function NetworkGraph() {
   const [draggedNode, setDraggedNode] = useState<GraphNode | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+  const isMobileDevice = dimensions.width < 768;
   
   // Custom states for premium interactive features
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
@@ -229,8 +230,10 @@ export default function NetworkGraph() {
     const step = () => {
       setNodes((currentNodes) => {
         const nextNodes = currentNodes.map((n) => ({ ...n }));
+        const isMobile = dimensions.width < 768;
 
         // 1. Repulsion between all nodes
+        const repulsionRadius = isMobile ? 140 : 220; 
         for (let i = 0; i < nextNodes.length; i++) {
           const nodeA = nextNodes[i];
           for (let j = i + 1; j < nextNodes.length; j++) {
@@ -239,9 +242,8 @@ export default function NetworkGraph() {
             const dy = nodeB.y - nodeA.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             
-            const repulsionRadius = 220; // Increased spacing for cards
             if (dist < repulsionRadius) {
-              const force = (repulsionRadius - dist) * 0.035;
+              const force = (repulsionRadius - dist) * (isMobile ? 0.025 : 0.035);
               const fx = (dx / dist) * force;
               const fy = (dy / dist) * force;
               
@@ -258,6 +260,7 @@ export default function NetworkGraph() {
         }
 
         // 2. Attraction of links
+        const targetDist = isMobile ? 90 : 130;
         links.forEach((link) => {
           const sourceNode = nextNodes.find((n) => n.id === link.source);
           const targetNode = nextNodes.find((n) => n.id === link.target);
@@ -267,7 +270,6 @@ export default function NetworkGraph() {
             const dy = targetNode.y - sourceNode.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             
-            const targetDist = 130;
             const force = (dist - targetDist) * 0.025;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
@@ -284,14 +286,18 @@ export default function NetworkGraph() {
         });
 
         // 3. Gravity towards cluster centers
+        const multXLeft = isMobile ? 0.3 : 0.25;
+        const multXRight = isMobile ? 0.7 : 0.75;
+        const multYTop = isMobile ? 0.3 : 0.28;
+        const multYBottom = isMobile ? 0.7 : 0.72;
         nextNodes.forEach((node) => {
           let cx = dimensions.width / 2;
           let cy = dimensions.height / 2;
 
-          if (node.category === "sintiencia") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.28; }
-          else if (node.category === "historia") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.28; }
-          else if (node.category === "ecologia") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.72; }
-          else if (node.category === "etica") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.72; }
+          if (node.category === "sintiencia") { cx = dimensions.width * multXLeft; cy = dimensions.height * multYTop; }
+          else if (node.category === "historia") { cx = dimensions.width * multXRight; cy = dimensions.height * multYTop; }
+          else if (node.category === "ecologia") { cx = dimensions.width * multXLeft; cy = dimensions.height * multYBottom; }
+          else if (node.category === "etica") { cx = dimensions.width * multXRight; cy = dimensions.height * multYBottom; }
 
           const dx = cx - node.x;
           const dy = cy - node.y;
@@ -308,7 +314,7 @@ export default function NetworkGraph() {
         });
 
         // 4. Hard Collision Constraint (Rigid body overlap prevention)
-        const minCollisionDist = 135; // Prevents HTML card overlaps perfectly
+        const minCollisionDist = isMobile ? 95 : 135; // Prevents HTML card overlaps perfectly
         for (let k = 0; k < 3; k++) {
           for (let i = 0; i < nextNodes.length; i++) {
             const nodeA = nextNodes[i];
@@ -341,9 +347,9 @@ export default function NetworkGraph() {
         }
 
         // 5. Apply boundaries strictly
+        const marginX = isMobile ? 60 : 85;
+        const marginY = isMobile ? 35 : 45;
         nextNodes.forEach((node) => {
-          const marginX = 85;
-          const marginY = 45;
           node.x = Math.max(marginX, Math.min(dimensions.width - marginX, node.x));
           node.y = Math.max(marginY, Math.min(dimensions.height - marginY, node.y));
         });
@@ -489,9 +495,11 @@ export default function NetworkGraph() {
     let clicked: GraphNode | null = null;
     
     // Check bounding box of node cards
+    const cardHalfWidth = isMobileDevice ? 55 : 70;
+    const cardHalfHeight = isMobileDevice ? 20 : 25;
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i];
-      if (clickX >= n.x - 70 && clickX <= n.x + 70 && clickY >= n.y - 25 && clickY <= n.y + 25) {
+      if (clickX >= n.x - cardHalfWidth && clickX <= n.x + cardHalfWidth && clickY >= n.y - cardHalfHeight && clickY <= n.y + cardHalfHeight) {
         clicked = n;
         break;
       }
@@ -511,9 +519,11 @@ export default function NetworkGraph() {
     const mouseY = ((e.clientY - rect.top) / rect.height) * dimensions.height;
 
     let target: GraphNode | null = null;
+    const cardHalfWidth = isMobileDevice ? 55 : 70;
+    const cardHalfHeight = isMobileDevice ? 20 : 25;
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i];
-      if (mouseX >= n.x - 70 && mouseX <= n.x + 70 && mouseY >= n.y - 25 && mouseY <= n.y + 25) {
+      if (mouseX >= n.x - cardHalfWidth && mouseX <= n.x + cardHalfWidth && mouseY >= n.y - cardHalfHeight && mouseY <= n.y + cardHalfHeight) {
         target = n;
         break;
       }
@@ -545,9 +555,11 @@ export default function NetworkGraph() {
     }
 
     let hoverTarget: GraphNode | null = null;
+    const cardHalfWidth = isMobileDevice ? 55 : 70;
+    const cardHalfHeight = isMobileDevice ? 20 : 25;
     for (let i = nodes.length - 1; i >= 0; i--) {
       const n = nodes[i];
-      if (mouseX >= n.x - 70 && mouseX <= n.x + 70 && mouseY >= n.y - 25 && mouseY <= n.y + 25) {
+      if (mouseX >= n.x - cardHalfWidth && mouseX <= n.x + cardHalfWidth && mouseY >= n.y - cardHalfHeight && mouseY <= n.y + cardHalfHeight) {
         hoverTarget = n;
         break;
       }
@@ -701,7 +713,7 @@ export default function NetworkGraph() {
               return (
                 <div
                   key={node.id}
-                  className={`absolute flex items-center gap-2 w-[140px] px-2.5 py-2 rounded-xl backdrop-blur-md transition-all duration-200 ease-out border text-left ${categoryBgClass} ${categoryColorClass} ${glowColorClass} ${opacityClass}`}
+                  className={`absolute flex items-center gap-1.5 md:gap-2 w-[110px] md:w-[140px] px-1.5 py-1.5 md:px-2.5 md:py-2 rounded-xl backdrop-blur-md transition-all duration-200 ease-out border text-left ${categoryBgClass} ${categoryColorClass} ${glowColorClass} ${opacityClass}`}
                   style={{
                     left: 0,
                     top: 0,
@@ -715,13 +727,155 @@ export default function NetworkGraph() {
                     <span className={`relative inline-flex rounded-full h-2 w-2 ${dotColorClass}`} />
                   </div>
                   
-                  <span className="text-[10px] font-sans font-semibold tracking-tight text-zinc-800 dark:text-zinc-200 leading-[1.25] break-words whitespace-normal select-none w-full">
+                  <span className="text-[9px] md:text-[10px] font-sans font-semibold tracking-tight text-zinc-800 dark:text-zinc-200 leading-[1.25] break-words whitespace-normal select-none w-full">
                     {node.title}
                   </span>
                 </div>
               );
             })}
           </div>
+
+          {/* Mobile Sliding Bottom Sheet/Drawer */}
+          <AnimatePresence>
+            {selectedNode && isMobileDevice && (
+              <motion.div
+                initial={{ y: "100%" }}
+                animate={{ y: 0 }}
+                exit={{ y: "100%" }}
+                transition={{ type: "spring", damping: 25, stiffness: 220 }}
+                className="absolute bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-900 rounded-t-3xl shadow-[0_-10px_30px_rgba(0,0,0,0.15)] flex flex-col max-h-[75%] pointer-events-auto"
+              >
+                {/* Drag handle / header */}
+                <div className="flex flex-col items-center py-3 border-b border-zinc-100 dark:border-zinc-900/80 cursor-pointer" onClick={() => setSelectedNode(null)}>
+                  <div className="w-12 h-1 bg-zinc-300 dark:bg-zinc-700 rounded-full mb-1" />
+                  <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500 uppercase">Toca para cerrar</span>
+                </div>
+
+                {/* Scrollable details */}
+                <div className="overflow-y-auto p-5 space-y-5 custom-scrollbar select-text">
+                  <div className="flex items-center justify-between">
+                    <span className={`text-[9px] tracking-widest font-mono uppercase px-2 py-0.5 rounded-full ${getCategoryBadgeClass(selectedNode.category)}`}>
+                      {selectedNode.category === "sintiencia" ? "Sintiencia" :
+                       selectedNode.category === "historia" ? "Historia" :
+                       selectedNode.category === "ecologia" ? "Ecología" : "Ética y Derechos"}
+                    </span>
+                    <button 
+                      onClick={() => setSelectedNode(null)} 
+                      className="text-[10px] font-mono text-cyan-500 dark:text-cyan-400 hover:text-cyan-600 dark:hover:text-cyan-300 font-bold underline cursor-pointer pointer-events-auto"
+                    >
+                      Cerrar
+                    </button>
+                  </div>
+
+                  <h2 className="text-base font-extrabold text-zinc-900 dark:text-white tracking-tight border-b border-zinc-100 dark:border-zinc-900 pb-2">
+                    {selectedNode.title}
+                  </h2>
+
+                  <p className="text-[11.5px] text-zinc-600 dark:text-zinc-400 font-light leading-relaxed select-text">
+                    {renderTextWithReferences(selectedNode.longDesc, selectedNode.references)}
+                  </p>
+
+                  <div className="space-y-3 pt-1">
+                    <h4 className="text-[9px] font-bold tracking-wider text-zinc-700 dark:text-zinc-300 font-mono flex items-center gap-1.5">
+                      <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-white animate-pulse" />
+                      EVIDENCIAS Y HECHOS FÁCTICOS:
+                    </h4>
+                    <ul className="space-y-2 text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light select-text">
+                      {selectedNode.scientificFacts.map((fact, i) => (
+                        <li key={i} className="flex items-start gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-2.5 rounded-xl border border-zinc-200/50 dark:border-zinc-900/30">
+                          <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
+                          <span>{renderTextWithReferences(fact, selectedNode.references)}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+
+                  {/* Collapsible Bibliography Section inside mobile drawer */}
+                  {selectedNode.references && selectedNode.references.length > 0 && (
+                    <div className="pt-1">
+                      <button
+                        onClick={() => setIsBibliographyOpen(!isBibliographyOpen)}
+                        className="flex items-center justify-between w-full py-2 px-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[9px] font-mono tracking-wider uppercase text-zinc-500 hover:text-zinc-850 dark:hover:text-zinc-300 transition-all font-bold select-none cursor-pointer pointer-events-auto"
+                      >
+                        <span className="flex items-center gap-1.5">
+                          <BookOpen className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+                          BIBLIOGRAFÍA COMPLETA ({selectedNode.references.length})
+                        </span>
+                        {isBibliographyOpen ? (
+                          <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                        ) : (
+                          <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                        )}
+                      </button>
+                      <AnimatePresence>
+                        {isBibliographyOpen && (
+                          <motion.div
+                            initial={{ height: 0, opacity: 0 }}
+                            animate={{ height: "auto", opacity: 1 }}
+                            exit={{ height: 0, opacity: 0 }}
+                            transition={{ duration: 0.2 }}
+                            className="overflow-hidden"
+                          >
+                            <ul className="mt-2 space-y-2 pl-1">
+                              {selectedNode.references.map((ref) => (
+                                <li
+                                  key={ref.id}
+                                  className="text-[10px] leading-relaxed text-zinc-500 dark:text-zinc-500 border-l border-zinc-200 dark:border-zinc-800/50 pl-2.5 py-0.5"
+                                >
+                                  <span className="font-bold text-zinc-700 dark:text-zinc-300 font-mono mr-1">
+                                    [{ref.id}]
+                                  </span>
+                                  {ref.citation}
+                                  {ref.url && (
+                                    <a
+                                      href={ref.url}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="inline-flex items-center gap-0.5 text-cyan-500 dark:text-cyan-400 hover:underline ml-1 font-semibold pointer-events-auto"
+                                    >
+                                      <span>Ver artículo</span>
+                                      <ExternalLink className="w-2.5 h-2.5" />
+                                    </a>
+                                  )}
+                                </li>
+                              ))}
+                            </ul>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  )}
+
+                  {/* Connections section in drawer */}
+                  <div className="pt-3 border-t border-zinc-100 dark:border-zinc-900/50">
+                    <span className="text-[8.5px] font-mono tracking-widest uppercase text-zinc-400 dark:text-zinc-500 block mb-2">
+                      Conexiones Lógicas en la Red:
+                    </span>
+                    <div className="flex flex-wrap gap-1.5 pb-2">
+                      {selectedNode.connections.map((connId) => {
+                        const linked = CORE_NODES.find((n) => n.id === connId);
+                        if (!linked) return null;
+                        return (
+                          <button
+                            key={connId}
+                            onClick={() => setSelectedNode(linked)}
+                            className="text-[10px] px-2 py-1 rounded-lg bg-zinc-50 dark:bg-zinc-900/40 hover:bg-zinc-100 dark:hover:bg-zinc-900 text-zinc-600 dark:text-zinc-400 border border-zinc-200/50 dark:border-zinc-900 transition-all flex items-center gap-1 hover:text-zinc-900 dark:hover:text-white cursor-pointer pointer-events-auto"
+                          >
+                            <span className={`w-1.5 h-1.5 rounded-full ${
+                              linked.category === 'sintiencia' ? 'bg-red-500' :
+                              linked.category === 'ecologia' ? 'bg-emerald-500' :
+                              linked.category === 'historia' ? 'bg-blue-500' : 'bg-purple-500'
+                            }`} />
+                            {linked.title}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Legend / Category Filter Tabs */}
@@ -747,7 +901,11 @@ export default function NetworkGraph() {
                   }`}
                 >
                   <span className={`w-2 h-2 rounded-full ${cat.color} shrink-0`} />
-                  <span className="text-[10px] tracking-tight">{cat.label}</span>
+                  <span className="text-[10px] tracking-tight">
+                    {isMobileDevice 
+                      ? (cat.id === "sintiencia" ? "Sintiencia" : cat.id === "historia" ? "Historia" : cat.id === "ecologia" ? "Ecología" : "Ética") 
+                      : cat.label}
+                  </span>
                 </button>
               );
             })}
@@ -765,7 +923,7 @@ export default function NetworkGraph() {
       </div>
 
       {/* Details Panel */}
-      <div className={`${isFullscreen ? "lg:w-5/12 max-h-[90vh] overflow-y-auto custom-scrollbar" : "lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800"} p-6 lg:p-8 flex flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 rounded-2xl`}>
+      <div className={`${isFullscreen ? "lg:w-5/12 max-h-[90vh] overflow-y-auto custom-scrollbar" : "lg:col-span-5 lg:border-l border-zinc-200 dark:border-zinc-800"} hidden lg:flex p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 rounded-2xl`}>
         <AnimatePresence mode="wait">
           {selectedNode ? (
             <motion.div

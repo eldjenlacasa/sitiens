@@ -51,8 +51,8 @@ export default function ImpactCalculator() {
             Las decisiones dietéticas individuales se agregan mecánicamente en la demanda agregada industrial. Utiliza este cuantificador interactivo para ver los m3 de agua limpia consumidos, los kg de CO2 térmico inyectados, la superficie forestal destruida y el cereal desperdiciado para nutrir tus hábitos semanales.
           </p>
         </div>
-        <div className="md:col-span-4 flex flex-col justify-center items-end bg-zinc-100/70 dark:bg-zinc-900/60 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800/80">
-          <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1">Tu Hábito Semanal de Consumo:</span>
+        <div className="md:col-span-4 flex flex-col justify-center items-center md:items-end bg-zinc-100/70 dark:bg-zinc-900/60 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800/80">
+          <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1 text-center md:text-right">Tu Hábito Semanal de Consumo:</span>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setWeeklyMeals((v) => Math.max(0, v - 1))}
@@ -70,7 +70,7 @@ export default function ImpactCalculator() {
               <Plus className="w-4 h-4" />
             </button>
           </div>
-          <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-500 mt-1 uppercase text-right">Equivalente a {Math.round(weeklyMeals / 3 * 10) / 10} días completos</span>
+          <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-500 mt-1 uppercase text-center md:text-right">Equivalente a {Math.round(weeklyMeals / 3 * 10) / 10} días completos</span>
         </div>
       </div>
 

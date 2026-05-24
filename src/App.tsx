@@ -16,7 +16,7 @@ import {
   Sun,
   Moon
 } from "lucide-react";
-import NetworkGraph from "./components/NetworkGraph";
+import ConceptExplorer from "./components/ConceptExplorer";
 import ExcusesDilemmas from "./components/ExcusesDilemmas";
 import ImpactCalculator from "./components/ImpactCalculator";
 import AiValidator from "./components/AiValidator";
@@ -53,7 +53,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-800 dark:text-zinc-200 selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-white flex flex-col justify-between transition-colors duration-300">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-800 dark:text-zinc-200 selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-white flex flex-col justify-between transition-colors duration-300 pb-24 md:pb-0">
       {/* Dynamic Upper Ambient Border Glow */}
       <div className="absolute top-0 left-0 right-0 h-[450px] bg-radial from-purple-950/5 dark:from-purple-950/15 via-transparent to-transparent pointer-events-none z-0" />
 
@@ -77,10 +77,10 @@ export default function App() {
 
           {/* Quick tab controllers & Theme Toggle */}
           <div className="flex items-center gap-3">
-            <nav className="flex space-x-1 bg-zinc-100 dark:bg-zinc-900/60 p-1 rounded-xl border border-zinc-200 dark:border-zinc-900 transition-colors">
+            <nav className="hidden md:flex space-x-1 bg-zinc-100 dark:bg-zinc-900/60 p-1 rounded-xl border border-zinc-200 dark:border-zinc-900 transition-colors">
               {(
                 [
-                  { id: "grafo", label: "El Grafo" },
+                  { id: "grafo", label: "Conceptos" },
                   { id: "dialectica", label: "Tesis & Dilemas" },
                   { id: "calculadora", label: "El Cuantificador" },
                   { id: "validador", label: "Sitiens IA" }
@@ -156,7 +156,7 @@ export default function App() {
                 transition={{ duration: 0.25 }}
                 className="w-full"
               >
-                <NetworkGraph />
+                <ConceptExplorer />
               </motion.div>
             )}
 
@@ -248,6 +248,42 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* Floating Sticky Bottom Mobile Navigation Bar */}
+      <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-[400px] bg-white/80 dark:bg-zinc-950/85 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-900/80 p-2 rounded-2xl flex items-center justify-around shadow-2xl transition-all duration-300">
+        {(
+          [
+            { id: "grafo", label: "El Grafo", icon: Network },
+            { id: "dialectica", label: "Tesis", icon: Scale },
+            { id: "calculadora", label: "Impacto", icon: Activity },
+            { id: "validador", label: "Sitiens IA", icon: Sparkles }
+          ] as { id: TabType; label: string; icon: any }[]
+        ).map((tab) => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={`flex flex-col items-center gap-1 py-1.5 px-3 rounded-xl transition-all duration-200 relative cursor-pointer ${
+                isActive
+                  ? "text-zinc-950 dark:text-white"
+                  : "text-zinc-400 dark:text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-300"
+              }`}
+            >
+              {isActive && (
+                <motion.div
+                  layoutId="activeBottomTabGlow"
+                  className="absolute inset-0 bg-zinc-100 dark:bg-zinc-900 rounded-xl -z-10 border border-zinc-200/30 dark:border-zinc-850"
+                  transition={{ type: "spring", stiffness: 380, damping: 30 }}
+                />
+              )}
+              <Icon className={`w-4 h-4 transition-transform duration-200 ${isActive ? "scale-110" : ""}`} />
+              <span className="text-[9px] font-mono tracking-tight font-bold">{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
     </div>
   );
 }
