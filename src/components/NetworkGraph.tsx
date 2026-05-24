@@ -138,6 +138,15 @@ export default function NetworkGraph() {
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
   const isMobileDevice = dimensions.width < 768;
+  const [isMobileViewport, setIsMobileViewport] = useState(() => typeof window !== "undefined" ? window.innerWidth < 1024 : false);
+
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobileViewport(window.innerWidth < 1024);
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, []);
   
   // Custom states for premium interactive features
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
@@ -737,13 +746,13 @@ export default function NetworkGraph() {
 
           {/* Mobile Sliding Bottom Sheet/Drawer */}
           <AnimatePresence>
-            {selectedNode && isMobileDevice && (
+            {selectedNode && isMobileViewport && (
               <motion.div
                 initial={{ y: "100%" }}
                 animate={{ y: 0 }}
                 exit={{ y: "100%" }}
                 transition={{ type: "spring", damping: 25, stiffness: 220 }}
-                className="absolute bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-900 rounded-t-3xl shadow-[0_-10px_30px_rgba(0,0,0,0.15)] flex flex-col max-h-[75%] pointer-events-auto"
+                className="lg:hidden absolute bottom-0 left-0 right-0 z-40 bg-white/95 dark:bg-zinc-950/95 backdrop-blur-xl border-t border-zinc-200 dark:border-zinc-900 rounded-t-3xl shadow-[0_-10px_30px_rgba(0,0,0,0.15)] flex flex-col max-h-[75%] pointer-events-auto"
               >
                 {/* Drag handle / header */}
                 <div className="flex flex-col items-center py-3 border-b border-zinc-100 dark:border-zinc-900/80 cursor-pointer" onClick={() => setSelectedNode(null)}>
