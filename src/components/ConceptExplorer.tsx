@@ -397,7 +397,7 @@ export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }:
             {/* Left Section: Cards and Search (lg:col-span-7) */}
             <div className="lg:col-span-7 p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300 flex flex-col justify-between space-y-6">
               
-              <div className="flex flex-col space-y-4 flex-1 min-h-0">
+              <div className="flex flex-col gap-5 flex-1 min-h-0">
                 {/* Search and Categories row */}
                 <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
                   {/* Search Bar */}
@@ -434,7 +434,7 @@ export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }:
                 </div>
 
                 {/* Concepts list/grid scroll area */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-0 overflow-y-auto pr-1.5 custom-scrollbar">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 flex-1 min-h-0 overflow-y-auto pt-2 pb-4 pr-1.5 custom-scrollbar">
                   {filteredNodes.length === 0 ? (
                     <div className="col-span-full py-16 text-center space-y-3">
                       <HelpCircle className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
@@ -479,7 +479,7 @@ export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }:
                       return (
                         <motion.div
                           key={node.id}
-                          layoutId={`card-container-${node.id}`}
+                          layout
                           onClick={() => handleSelectNode(node)}
                           className={`group p-5 rounded-2xl border text-left cursor-pointer transition-all duration-300 relative overflow-hidden bg-white/50 dark:bg-zinc-950/20 ${categoryColorClass} ${bgGlow} ${
                             isSelected ? "shadow-md -translate-y-0.5" : "hover:-translate-y-0.5"
