@@ -207,28 +207,28 @@ export default function App() {
             <div className="bg-white dark:bg-zinc-950 p-6 border border-zinc-200 dark:border-zinc-900 rounded-2xl space-y-2 transition-colors">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1 px-2 rounded bg-red-500/10 border border-red-500/20 text-[10px] font-mono text-red-500 dark:text-red-400 font-bold">1</span>
-                <span className="font-bold text-zinc-900 dark:text-white text-xs">Mapeo del dolor</span>
+                <span className="font-bold text-zinc-900 dark:text-white text-xs">Mapeo Sintiente</span>
               </div>
               <p className="text-zinc-500 dark:text-zinc-400 text-xs font-light leading-relaxed">
-                Investiga las evidencias empíricas sobre el sistema nervioso central, la presencia de dolor consciente y la deconstrucción de la frontera vegetal.
+                Investiga la neurobiología del dolor físico consciente, la Declaración de Cambridge sobre la Conciencia y la deconstrucción de la frontera vegetal.
               </p>
             </div>
             <div className="bg-white dark:bg-zinc-950 p-6 border border-zinc-200 dark:border-zinc-900 rounded-2xl space-y-2 transition-colors">
               <div className="flex items-center gap-2 mb-1">
                 <span className="p-1 px-2 rounded bg-emerald-500/10 border border-emerald-500/20 text-[10px] font-mono text-emerald-500 dark:text-emerald-400 font-bold">2</span>
-                <span className="font-bold text-zinc-900 dark:text-white text-xs">Soterrar el Desgaste</span>
+                <span className="font-bold text-zinc-900 dark:text-white text-xs">Desgaste Biosférico</span>
               </div>
               <p className="text-zinc-500 dark:text-zinc-400 text-xs font-light leading-relaxed">
-                Analiza las variables de metano del ganado rumiante, la termodinámica ineficiente del filtrado de piensos y la deforestación de bosques para monocultivos de soja.
+                Analiza la ineficiencia termodinámica del filtrado calórico a través del ganado, el forzamiento del metano y la deforestación de hábitats silvestres colaterales.
               </p>
             </div>
             <div className="bg-white dark:bg-zinc-950 p-6 border border-zinc-200 dark:border-zinc-900 rounded-2xl space-y-2 transition-colors">
               <div className="flex items-center gap-2 mb-1">
-                <span className="p-1 px-2 rounded bg-amber-500/10 border border-amber-500/20 text-[10px] font-mono text-amber-600 dark:text-amber-400 font-bold">3</span>
-                <span className="font-bold text-zinc-900 dark:text-white text-xs">Deconstrucción</span>
+                <span className="p-1 px-2 rounded bg-purple-500/10 border border-purple-500/20 text-[10px] font-mono text-purple-600 dark:text-purple-400 font-bold">3</span>
+                <span className="font-bold text-zinc-900 dark:text-white text-xs">Justicia y Deconstrucción</span>
               </div>
               <p className="text-zinc-500 dark:text-zinc-400 text-xs font-light leading-relaxed">
-                Examina los dogmas y axiomas morales de nuestra cultura con una aproximación socrática y asimila los recursos modernos de la suplementación de B12.
+                Explora el especismo, los derechos de los animales y el veganismo como imperativos de consistencia ética frente a excusas culturales tradicionales.
               </p>
             </div>
           </div>

@@ -1,11 +1,117 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CORE_NODES, NodeDetail } from "../types";
-import { Info, HelpCircle, Activity, Globe, Scale, Maximize2, Minimize2 } from "lucide-react";
+import { Info, HelpCircle, Activity, Globe, Scale, Maximize2, Minimize2, ExternalLink, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+interface ReferenceTooltipProps {
+  refDetail: { id: string; citation: string; url?: string };
+  children: React.ReactNode;
+  key?: any;
+}
+
+function ReferenceTooltip({ refDetail, children }: ReferenceTooltipProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 150);
+  };
+
+  return (
+    <span 
+      className="relative inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsOpen(!isOpen);
+      }}
+    >
+      {children}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.span
+            initial={{ opacity: 0, y: 5, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-zinc-900 dark:bg-zinc-950 text-white rounded-xl shadow-xl border border-zinc-800/80 z-50 text-left font-sans block pointer-events-auto cursor-default normal-case tracking-normal whitespace-normal font-normal"
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={() => {
+              if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            }}
+            onMouseLeave={handleMouseLeave}
+          >
+            <span className="block text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-bold mb-1">
+              Referencia [{refDetail.id}]
+            </span>
+            <span className="block text-[10.5px] leading-relaxed text-zinc-200 font-light font-sans select-text">
+              {refDetail.citation}
+            </span>
+            {refDetail.url && (
+              <a
+                href={refDetail.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2.5 inline-flex items-center gap-1 text-[9px] font-mono uppercase font-bold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer select-none"
+              >
+                <span>Ver artículo completo</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
+            <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900 dark:border-t-zinc-950" />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </span>
+  );
+}
+
+const renderTextWithReferences = (text: string, references?: { id: string; citation: string; url?: string }[]) => {
+  if (!references || references.length === 0) return <span>{text}</span>;
+
+  const parts = text.split(/(\[[0-9,\s]+\])/g);
+  
+  return (
+    <>
+      {parts.map((part, idx) => {
+        const match = part.match(/^\[([0-9,\s]+)\]$/);
+        if (match) {
+          const numbers = match[1].split(",").map((num) => num.trim());
+          return (
+            <span key={idx} className="inline-flex gap-0.5">
+              {numbers.map((refId, nIdx) => {
+                const ref = references.find((r) => r.id === refId);
+                if (ref) {
+                  return (
+                    <ReferenceTooltip key={nIdx} refDetail={ref}>
+                      <sup className="text-cyan-500 dark:text-cyan-400 font-bold hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors px-0.5 cursor-pointer select-none">
+                        [{refId}]
+                      </sup>
+                    </ReferenceTooltip>
+                  );
+                }
+                return <sup key={nIdx}>[{refId}]</sup>;
+              })}
+            </span>
+          );
+        }
+        return <span key={idx}>{part}</span>;
+      })}
+    </>
+  );
+};
 
 interface GraphNode {
   id: string;
-  category: "sintiencia" | "historia" | "clima" | "eleccion";
+  category: "sintiencia" | "historia" | "ecologia" | "etica";
   title: string;
   x: number;
   y: number;
@@ -35,6 +141,12 @@ export default function NetworkGraph() {
   // Custom states for premium interactive features
   const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [isBibliographyOpen, setIsBibliographyOpen] = useState(false);
+
+  // Collapse bibliography when selected node changes
+  useEffect(() => {
+    setIsBibliographyOpen(false);
+  }, [selectedNode]);
 
   // Sync isDark state dynamically with document.documentElement class mutations (theme switcher)
   useEffect(() => {
@@ -53,8 +165,8 @@ export default function NetworkGraph() {
       
       if (node.category === "sintiencia") { cx = 150; cy = 120; }
       else if (node.category === "historia") { cx = 450; cy = 120; }
-      else if (node.category === "clima") { cx = 150; cy = 280; }
-      else if (node.category === "eleccion") { cx = 450; cy = 280; }
+      else if (node.category === "ecologia") { cx = 150; cy = 280; }
+      else if (node.category === "etica") { cx = 450; cy = 280; }
 
       const angle = (i * 0.7) % (Math.PI * 2);
       const dist = 40 + Math.random() * 30;
@@ -178,8 +290,8 @@ export default function NetworkGraph() {
 
           if (node.category === "sintiencia") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.28; }
           else if (node.category === "historia") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.28; }
-          else if (node.category === "clima") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.72; }
-          else if (node.category === "eleccion") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.72; }
+          else if (node.category === "ecologia") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.72; }
+          else if (node.category === "etica") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.72; }
 
           const dx = cx - node.x;
           const dy = cy - node.y;
@@ -285,9 +397,9 @@ export default function NetworkGraph() {
         
         const getCatColor = (cat: string, opacity: number) => {
           if (cat === "sintiencia") return `rgba(239, 68, 68, ${opacity})`;
-          if (cat === "clima") return `rgba(16, 185, 129, ${opacity})`;
+          if (cat === "ecologia") return `rgba(16, 185, 129, ${opacity})`;
           if (cat === "historia") return `rgba(59, 130, 246, ${opacity})`;
-          return `rgba(245, 158, 11, ${opacity})`;
+          return `rgba(168, 85, 247, ${opacity})`; // purple-500 for etica
         };
 
         let opacity = isDark ? 0.12 : 0.06;
@@ -323,8 +435,8 @@ export default function NetworkGraph() {
             ctx.fillStyle = getCatColor(source.category, 0.95);
             ctx.shadowBlur = 6;
             ctx.shadowColor = source.category === "sintiencia" ? "#ef4444" :
-                             source.category === "clima" ? "#10b981" :
-                             source.category === "historia" ? "#3b82f6" : "#f59e0b";
+                             source.category === "ecologia" ? "#10b981" :
+                             source.category === "historia" ? "#3b82f6" : "#a855f7";
 
             ctx.beginPath();
             ctx.arc(px, py, 2.5, 0, Math.PI * 2);
@@ -344,17 +456,17 @@ export default function NetworkGraph() {
       if ((isSelected || isHovered) && !isFilteredOut) {
         let nodeColorHex = "#ffffff";
         if (node.category === "sintiencia") nodeColorHex = "#ef4444";
-        else if (node.category === "clima") nodeColorHex = "#10b981";
+        else if (node.category === "ecologia") nodeColorHex = "#10b981";
         else if (node.category === "historia") nodeColorHex = "#3b82f6";
-        else if (node.category === "eleccion") nodeColorHex = "#f59e0b";
+        else if (node.category === "etica") nodeColorHex = "#a855f7";
 
         ctx.shadowBlur = isSelected ? 30 : 15;
         ctx.shadowColor = nodeColorHex;
         
         ctx.fillStyle = isSelected 
           ? (node.category === "sintiencia" ? "rgba(239, 68, 68, 0.12)" :
-             node.category === "clima" ? "rgba(16, 185, 129, 0.12)" :
-             node.category === "historia" ? "rgba(59, 130, 246, 0.12)" : "rgba(245, 158, 11, 0.12)")
+             node.category === "ecologia" ? "rgba(16, 185, 129, 0.12)" :
+             node.category === "historia" ? "rgba(59, 130, 246, 0.12)" : "rgba(168, 85, 247, 0.12)")
           : "rgba(255, 255, 255, 0.04)";
 
         ctx.beginPath();
@@ -451,12 +563,12 @@ export default function NetworkGraph() {
     switch (category) {
       case "sintiencia":
         return <Activity className="w-5 h-5 text-red-500" />;
-      case "clima":
+      case "ecologia":
         return <Globe className="w-5 h-5 text-emerald-500" />;
       case "historia":
         return <Info className="w-5 h-5 text-blue-500" />;
-      case "eleccion":
-        return <Scale className="w-5 h-5 text-amber-500" />;
+      case "etica":
+        return <Scale className="w-5 h-5 text-purple-500" />;
       default:
         return <HelpCircle className="w-5 h-5 text-zinc-400" />;
     }
@@ -466,12 +578,12 @@ export default function NetworkGraph() {
     switch (category) {
       case "sintiencia":
         return "bg-red-500/10 text-red-500 border border-red-500/20";
-      case "clima":
+      case "ecologia":
         return "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20";
       case "historia":
         return "bg-blue-500/10 text-blue-500 border border-blue-500/30";
-      case "eleccion":
-        return "bg-amber-500/10 text-amber-500 border border-amber-500/30";
+      case "etica":
+        return "bg-purple-500/10 text-purple-500 border border-purple-500/30";
       default:
         return "bg-zinc-800 text-zinc-400 border border-zinc-700";
     }
@@ -556,7 +668,7 @@ export default function NetworkGraph() {
                 categoryColorClass = isSelected ? "border-red-500 ring-2 ring-red-500/30" : isHovered ? "border-red-400/80" : "border-red-500/20 dark:border-red-500/30";
                 glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(239,68,68,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(239,68,68,0.15)]" : "";
                 dotColorClass = "bg-red-500";
-              } else if (node.category === "clima") {
+              } else if (node.category === "ecologia") {
                 categoryColorClass = isSelected ? "border-emerald-500 ring-2 ring-emerald-500/30" : isHovered ? "border-emerald-400/80" : "border-emerald-500/20 dark:border-emerald-500/30";
                 glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(16,185,129,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(16,185,129,0.15)]" : "";
                 dotColorClass = "bg-emerald-500";
@@ -564,10 +676,10 @@ export default function NetworkGraph() {
                 categoryColorClass = isSelected ? "border-blue-500 ring-2 ring-blue-500/30" : isHovered ? "border-blue-400/80" : "border-blue-500/20 dark:border-blue-500/30";
                 glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(59,130,246,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(59,130,246,0.15)]" : "";
                 dotColorClass = "bg-blue-500";
-              } else if (node.category === "eleccion") {
-                categoryColorClass = isSelected ? "border-amber-500 ring-2 ring-amber-500/30" : isHovered ? "border-amber-400/80" : "border-amber-500/20 dark:border-amber-500/30";
-                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(245,158,11,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(245,158,11,0.15)]" : "";
-                dotColorClass = "bg-amber-500";
+              } else if (node.category === "etica") {
+                categoryColorClass = isSelected ? "border-purple-500 ring-2 ring-purple-500/30" : isHovered ? "border-purple-400/80" : "border-purple-500/20 dark:border-purple-500/30";
+                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(168,85,247,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(168,85,247,0.15)]" : "";
+                dotColorClass = "bg-purple-500";
               }
 
               // Dim nodes based on active focus
@@ -617,10 +729,10 @@ export default function NetworkGraph() {
           <div className="flex flex-wrap gap-2.5">
             {(
               [
-                { id: "sintiencia", label: "Sintiencia", color: "bg-red-500" },
-                { id: "historia", label: "Historia", color: "bg-blue-500" },
-                { id: "clima", label: "Clima", color: "bg-emerald-500" },
-                { id: "eleccion", label: "Elección Moral", color: "bg-amber-500" }
+                { id: "sintiencia", label: "Sintiencia y Conciencia", color: "bg-red-500" },
+                { id: "historia", label: "Historia y Explotación", color: "bg-blue-500" },
+                { id: "ecologia", label: "Ecología y Termodinámica", color: "bg-emerald-500" },
+                { id: "etica", label: "Ética y Derechos", color: "bg-purple-500" }
               ]
             ).map((cat) => {
               const isActive = activeCategoryFilter === cat.id;
@@ -644,7 +756,7 @@ export default function NetworkGraph() {
           {activeCategoryFilter && (
             <button
               onClick={() => setActiveCategoryFilter(null)}
-              className="text-[10px] text-violet-500 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300 font-bold underline cursor-pointer"
+              className="text-[10px] text-purple-500 hover:text-purple-600 dark:text-purple-400 dark:hover:text-purple-300 font-bold underline cursor-pointer"
             >
               Limpiar Filtro
             </button>
@@ -667,7 +779,9 @@ export default function NetworkGraph() {
               <div className="space-y-4">
                 <div className="flex items-center justify-between">
                   <span className={`text-[10px] tracking-widest font-mono uppercase px-2.5 py-1 rounded-full ${getCategoryBadgeClass(selectedNode.category)}`}>
-                    {selectedNode.category}
+                    {selectedNode.category === "sintiencia" ? "Sintiencia" :
+                     selectedNode.category === "historia" ? "Historia" :
+                     selectedNode.category === "ecologia" ? "Ecología" : "Ética y Derechos"}
                   </span>
                   <div className="flex items-center gap-1.5 text-zinc-500 text-xs">
                     {getCategoryIcon(selectedNode.category)}
@@ -679,8 +793,8 @@ export default function NetworkGraph() {
                   {selectedNode.title}
                 </h2>
 
-                <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors">
-                  {selectedNode.longDesc}
+                <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors select-text">
+                  {renderTextWithReferences(selectedNode.longDesc, selectedNode.references)}
                 </p>
 
                 <div className="space-y-3 pt-2">
@@ -688,22 +802,69 @@ export default function NetworkGraph() {
                     <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-white animate-pulse" />
                     EVIDENCIAS Y HECHOS FÁCTICOS:
                   </h4>
-                  <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-light">
+                  <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-light select-text">
                     {selectedNode.scientificFacts.map((fact, i) => (
                       <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800/40 transition-colors">
-                        <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5">[{i + 1}]</span>
-                        <span>{fact}</span>
+                        <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
+                        <span>{renderTextWithReferences(fact, selectedNode.references)}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
 
-                {selectedNode.citation && (
-                  <div className="p-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono text-zinc-500 dark:text-zinc-500 leading-relaxed transition-colors">
-                    <span className="text-[8px] uppercase tracking-widest text-zinc-600 block mb-1 font-bold">
-                      Fuente / Referencia Académica:
-                    </span>
-                    📖 {selectedNode.citation}
+                {/* Collapsible Bibliography Section */}
+                {selectedNode.references && selectedNode.references.length > 0 && (
+                  <div className="pt-2">
+                    <button
+                      onClick={() => setIsBibliographyOpen(!isBibliographyOpen)}
+                      className="flex items-center justify-between w-full py-2 px-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono tracking-wider uppercase text-zinc-500 hover:text-zinc-850 dark:hover:text-zinc-300 transition-all cursor-pointer font-bold select-none"
+                    >
+                      <span className="flex items-center gap-1.5">
+                        <BookOpen className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+                        BIBLIOGRAFÍA COMPLETA ({selectedNode.references.length})
+                      </span>
+                      {isBibliographyOpen ? (
+                        <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                      ) : (
+                        <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                      )}
+                    </button>
+                    <AnimatePresence>
+                      {isBibliographyOpen && (
+                        <motion.div
+                          initial={{ height: 0, opacity: 0 }}
+                          animate={{ height: "auto", opacity: 1 }}
+                          exit={{ height: 0, opacity: 0 }}
+                          transition={{ duration: 0.2 }}
+                          className="overflow-hidden"
+                        >
+                          <ul className="mt-2.5 space-y-2.5 pl-1.5">
+                            {selectedNode.references.map((ref) => (
+                              <li
+                                key={ref.id}
+                                className="text-[10.5px] leading-relaxed text-zinc-500 dark:text-zinc-500 font-sans border-l-2 border-zinc-200 dark:border-zinc-800/50 pl-3 py-0.5"
+                              >
+                                <span className="font-bold text-zinc-700 dark:text-zinc-300 font-mono mr-1.5">
+                                  [{ref.id}]
+                                </span>
+                                {ref.citation}
+                                {ref.url && (
+                                  <a
+                                    href={ref.url}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="inline-flex items-center gap-0.5 text-cyan-500 dark:text-cyan-400 hover:underline ml-1.5 font-semibold"
+                                  >
+                                    <span>Ver artículo</span>
+                                    <ExternalLink className="w-2.5 h-2.5" />
+                                  </a>
+                                )}
+                              </li>
+                            ))}
+                          </ul>
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
                   </div>
                 )}
               </div>
@@ -724,8 +885,8 @@ export default function NetworkGraph() {
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           linked.category === 'sintiencia' ? 'bg-red-500' :
-                          linked.category === 'clima' ? 'bg-emerald-500' :
-                          linked.category === 'historia' ? 'bg-blue-500' : 'bg-amber-500'
+                          linked.category === 'ecologia' ? 'bg-emerald-500' :
+                          linked.category === 'historia' ? 'bg-blue-500' : 'bg-purple-500'
                         }`} />
                         {linked.title}
                       </button>

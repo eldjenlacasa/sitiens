@@ -1,22 +1,129 @@
-import { useState } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { DILEMMAS_DATA, DilemmaDetail, ConsensusType } from "../types";
 import { 
   Compass, 
   Search, 
   Activity, 
   Globe, 
+  BookOpen, 
   Scale, 
   HelpCircle, 
-  BookOpen, 
-  Flame, 
-  Grid, 
   ChevronRight, 
   Terminal, 
   ShieldAlert, 
   Brain,
-  Sparkles
+  Sparkles,
+  ChevronUp,
+  ChevronDown,
+  ExternalLink
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+interface ReferenceTooltipProps {
+  refDetail: { id: string; citation: string; url?: string };
+  children: React.ReactNode;
+  key?: any;
+}
+
+function ReferenceTooltip({ refDetail, children }: ReferenceTooltipProps) {
+  const [isOpen, setIsOpen] = useState(false);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  const handleMouseEnter = () => {
+    if (timeoutRef.current) clearTimeout(timeoutRef.current);
+    setIsOpen(true);
+  };
+
+  const handleMouseLeave = () => {
+    timeoutRef.current = setTimeout(() => {
+      setIsOpen(false);
+    }, 150);
+  };
+
+  return (
+    <span 
+      className="relative inline-block"
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsOpen(!isOpen);
+      }}
+    >
+      {children}
+      <AnimatePresence>
+        {isOpen && (
+          <motion.span
+            initial={{ opacity: 0, y: 5, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 5, scale: 0.95 }}
+            transition={{ duration: 0.15 }}
+            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-zinc-900 dark:bg-zinc-950 text-white rounded-xl shadow-xl border border-zinc-800/80 z-50 text-left font-sans block pointer-events-auto cursor-default normal-case tracking-normal whitespace-normal font-normal"
+            onClick={(e) => e.stopPropagation()}
+            onMouseEnter={() => {
+              if (timeoutRef.current) clearTimeout(timeoutRef.current);
+            }}
+            onMouseLeave={handleMouseLeave}
+          >
+            <span className="block text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-bold mb-1">
+              Referencia [{refDetail.id}]
+            </span>
+            <span className="block text-[10.5px] leading-relaxed text-zinc-200 font-light font-sans select-text">
+              {refDetail.citation}
+            </span>
+            {refDetail.url && (
+              <a
+                href={refDetail.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2.5 inline-flex items-center gap-1 text-[9px] font-mono uppercase font-bold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer select-none"
+              >
+                <span>Ver artículo completo</span>
+                <ExternalLink className="w-2.5 h-2.5" />
+              </a>
+            )}
+            <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900 dark:border-t-zinc-950" />
+          </motion.span>
+        )}
+      </AnimatePresence>
+    </span>
+  );
+}
+
+const renderTextWithReferences = (text: string, references?: { id: string; citation: string; url?: string }[]) => {
+  if (!references || references.length === 0) return <span>{text}</span>;
+
+  const parts = text.split(/(\[[0-9,\s]+\])/g);
+  
+  return (
+    <>
+      {parts.map((part, idx) => {
+        const match = part.match(/^\[([0-9,\s]+)\]$/);
+        if (match) {
+          const numbers = match[1].split(",").map((num) => num.trim());
+          return (
+            <span key={idx} className="inline-flex gap-0.5">
+              {numbers.map((refId, nIdx) => {
+                const ref = references.find((r) => r.id === refId);
+                if (ref) {
+                  return (
+                    <ReferenceTooltip key={nIdx} refDetail={ref}>
+                      <sup className="text-cyan-500 dark:text-cyan-400 font-bold hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors px-0.5 cursor-pointer select-none">
+                        [{refId}]
+                      </sup>
+                    </ReferenceTooltip>
+                  );
+                }
+                return <sup key={nIdx}>[{refId}]</sup>;
+              })}
+            </span>
+          );
+        }
+        return <span key={idx}>{part}</span>;
+      })}
+    </>
+  );
+};
 
 interface ExcusesDilemmasProps {
   onAnalyzeTrigger: (excuseText: string) => void;
@@ -27,6 +134,12 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedConsensus, setSelectedConsensus] = useState<string>("all");
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [isBibliographyOpen, setIsBibliographyOpen] = useState(false);
+
+  // Collapse bibliography when expanded dilemma changes
+  useEffect(() => {
+    setIsBibliographyOpen(false);
+  }, [expandedId]);
 
   const getConsensusColor = (consensus: ConsensusType) => {
     switch (consensus) {
@@ -47,12 +160,12 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
     switch (cat) {
       case "sintiencia":
         return <Activity className="w-4 h-4 text-red-400" />;
-      case "clima":
+      case "ecologia":
         return <Globe className="w-4 h-4 text-emerald-400" />;
       case "historia":
          return <BookOpen className="w-4 h-4 text-blue-400" />;
-      case "eleccion":
-        return <Scale className="w-4 h-4 text-amber-400" />;
+      case "etica":
+        return <Scale className="w-4 h-4 text-purple-400" />;
       default:
         return <HelpCircle className="w-4 h-4 text-zinc-500" />;
     }
@@ -93,7 +206,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
         <div className="md:col-span-4 select-none flex flex-wrap gap-1.5 items-center">
           <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-500 uppercase mr-1">Pilar:</span>
           <div className="flex gap-1.5 flex-wrap">
-            {["all", "sintiencia", "historia", "clima", "eleccion"].map((cat) => (
+            {["all", "sintiencia", "historia", "ecologia", "etica"].map((cat) => (
               <button
                 key={cat}
                 onClick={() => setSelectedCategory(cat)}
@@ -103,7 +216,10 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                     : "bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-sm dark:shadow-none"
                 }`}
               >
-                {cat === "all" ? "Todos" : cat}
+                {cat === "all" ? "Todos" : 
+                 cat === "sintiencia" ? "Sintiencia" :
+                 cat === "historia" ? "Historia" :
+                 cat === "ecologia" ? "Ecología" : "Ética y Derechos"}
               </button>
             ))}
           </div>
@@ -159,7 +275,9 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                   <div className="flex items-center gap-1.5">
                     {getCategoryIconByString(dilemma.category)}
                     <span className="text-[10px] font-mono tracking-wider text-zinc-400 dark:text-zinc-500 uppercase font-light">
-                      {dilemma.category}
+                      {dilemma.category === "sintiencia" ? "Sintiencia" :
+                       dilemma.category === "historia" ? "Historia" :
+                       dilemma.category === "ecologia" ? "Ecología" : "Ética y Derechos"}
                     </span>
                   </div>
                   <span className={`text-[9px] font-mono font-bold tracking-widest px-2.5 py-0.5 rounded ${getConsensusColor(dilemma.consensus)}`}>
@@ -240,8 +358,8 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                             <Terminal className="w-3.5 h-3.5" />
                             Análisis Fisiológico / Científico
                           </h4>
-                          <p className="text-xs text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors">
-                            {current.scientificDeconstruction}
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors select-text">
+                            {renderTextWithReferences(current.scientificDeconstruction, current.references)}
                           </p>
                         </div>
 
@@ -251,8 +369,8 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                             <Brain className="w-3.5 h-3.5" />
                             Deconstrucción Ética / Lógica
                           </h4>
-                          <p className="text-xs text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors">
-                            {current.philosophicalDeconstruction}
+                          <p className="text-xs text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors select-text">
+                            {renderTextWithReferences(current.philosophicalDeconstruction, current.references)}
                           </p>
                         </div>
 
@@ -262,19 +380,66 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                             <ShieldAlert className="w-3.5 h-3.5" />
                             Impacto en la Coexistencia
                           </h4>
-                          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light transition-colors">
-                            {current.coexistenceImpact}
+                          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light transition-colors select-text">
+                            {renderTextWithReferences(current.coexistenceImpact, current.references)}
                           </p>
                         </div>
 
-                        {current.citation && (
-                          <div className="p-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono text-zinc-500 dark:text-zinc-500 leading-relaxed transition-colors">
-                            <span className="text-[8px] uppercase tracking-widest text-zinc-600 block mb-1 font-bold">
-                              Fuente / Referencia Académica:
-                            </span>
-                            📖 {current.citation}
-                          </div>
-                        )}
+                        {/* Collapsible Bibliography Section */}
+                        {current.references && current.references.length > 0 && (
+                          <div className="pt-2">
+                            <button
+                              onClick={() => setIsBibliographyOpen(!isBibliographyOpen)}
+                              className="flex items-center justify-between w-full py-2 px-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono tracking-wider uppercase text-zinc-500 hover:text-zinc-850 dark:hover:text-zinc-300 transition-all cursor-pointer font-bold select-none"
+                            >
+                              <span className="flex items-center gap-1.5">
+                                <BookOpen className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-500" />
+                                BIBLIOGRAFÍA COMPLETA ({current.references.length})
+                              </span>
+                              {isBibliographyOpen ? (
+                                <ChevronUp className="w-3.5 h-3.5 text-zinc-400" />
+                              ) : (
+                                <ChevronDown className="w-3.5 h-3.5 text-zinc-400" />
+                              )}
+                            </button>
+                            <AnimatePresence>
+                              {isBibliographyOpen && (
+                                <motion.div
+                                  initial={{ height: 0, opacity: 0 }}
+                                  animate={{ height: "auto", opacity: 1 }}
+                                  exit={{ height: 0, opacity: 0 }}
+                                transition={{ duration: 0.2 }}
+                                className="overflow-hidden"
+                              >
+                                <ul className="mt-2.5 space-y-2.5 pl-1.5">
+                                  {current.references.map((ref) => (
+                                    <li
+                                      key={ref.id}
+                                      className="text-[10.5px] leading-relaxed text-zinc-500 dark:text-zinc-500 font-sans border-l-2 border-zinc-200 dark:border-zinc-800/50 pl-3 py-0.5"
+                                    >
+                                      <span className="font-bold text-zinc-700 dark:text-zinc-300 font-mono mr-1.5">
+                                        [{ref.id}]
+                                      </span>
+                                      {ref.citation}
+                                      {ref.url && (
+                                        <a
+                                          href={ref.url}
+                                          target="_blank"
+                                          rel="noopener noreferrer"
+                                          className="inline-flex items-center gap-0.5 text-cyan-500 dark:text-cyan-400 hover:underline ml-1.5 font-semibold"
+                                        >
+                                          <span>Ver artículo</span>
+                                          <ExternalLink className="w-2.5 h-2.5" />
+                                        </a>
+                                      )}
+                                    </li>
+                                  ))}
+                                </ul>
+                              </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                      )}
 
                       </div>
 
