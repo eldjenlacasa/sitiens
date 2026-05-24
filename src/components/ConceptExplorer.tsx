@@ -521,26 +521,28 @@ export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }:
               </div>
             </div>
 
-            {/* Right Section: Sticky Desktop Details Panel (lg:col-span-5) */}
-            <div className="hidden lg:flex lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 sticky top-24 self-start max-h-[85vh] overflow-y-auto custom-scrollbar">
-              <AnimatePresence mode="wait">
-                {selectedNode ? (
-                  <motion.div
-                    key={selectedNode.id}
-                    initial={{ opacity: 0, x: 15 }}
-                    animate={{ opacity: 1, x: 0 }}
-                    exit={{ opacity: 0, x: -15 }}
-                    transition={{ duration: 0.2 }}
-                  >
-                    {renderDetailsContent(selectedNode)}
-                  </motion.div>
-                ) : (
-                  <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 dark:text-zinc-500 py-16">
-                    <HelpCircle className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 mb-2 animate-pulse" />
-                    <p className="text-xs font-light">Selecciona una tarjeta para explorar su sustento científico.</p>
-                  </div>
-                )}
-              </AnimatePresence>
+            {/* Right Section: Stretched Desktop Details Panel (lg:col-span-5) */}
+            <div className="hidden lg:block lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 relative">
+              <div className="sticky top-24 max-h-[calc(100vh-140px)] overflow-y-auto custom-scrollbar p-6 lg:p-8 flex flex-col justify-between">
+                <AnimatePresence mode="wait">
+                  {selectedNode ? (
+                    <motion.div
+                      key={selectedNode.id}
+                      initial={{ opacity: 0, x: 15 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      exit={{ opacity: 0, x: -15 }}
+                      transition={{ duration: 0.2 }}
+                    >
+                      {renderDetailsContent(selectedNode)}
+                    </motion.div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 dark:text-zinc-500 py-16">
+                      <HelpCircle className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 mb-2 animate-pulse" />
+                      <p className="text-xs font-light">Selecciona una tarjeta para explorar su sustento científico.</p>
+                    </div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
           </motion.div>
         )}

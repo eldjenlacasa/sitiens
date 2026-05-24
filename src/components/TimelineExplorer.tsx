@@ -16,15 +16,107 @@ import {
   GitCompare, 
   Clock, 
   ArrowRight, 
+  ArrowLeft,
   Sparkles,
   Info,
   Calendar,
   Activity,
   Globe,
   Scale,
-  Activity as DietIcon
+  Layers,
+  HelpCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+
+// Track metadata for coloring and labels in parallel view
+const TRACK_META: Record<string, { label: string; icon: any; color: string; textClass: string; bgClass: string; borderClass: string; glowClass: string }> = {
+  usos: {
+    label: "Usos e Instrumentalización",
+    icon: Layers,
+    color: "sky",
+    textClass: "text-sky-600 dark:text-sky-400",
+    bgClass: "bg-sky-50 dark:bg-sky-950/20",
+    borderClass: "border-sky-200 dark:border-sky-900/50",
+    glowClass: "shadow-sky-500/10 dark:shadow-sky-400/5",
+  },
+  etica: {
+    label: "Ética, Filosofía y Consciencia",
+    icon: Scale,
+    color: "purple",
+    textClass: "text-purple-600 dark:text-purple-400",
+    bgClass: "bg-purple-50 dark:bg-purple-950/20",
+    borderClass: "border-purple-200 dark:border-purple-900/50",
+    glowClass: "shadow-purple-500/10 dark:shadow-purple-400/5",
+  },
+  regulaciones: {
+    label: "Regulaciones y Leyes",
+    icon: Globe,
+    color: "emerald",
+    textClass: "text-emerald-600 dark:text-emerald-400",
+    bgClass: "bg-emerald-50 dark:bg-emerald-950/20",
+    borderClass: "border-emerald-200 dark:border-emerald-900/50",
+    glowClass: "shadow-emerald-500/10 dark:shadow-emerald-400/5",
+  },
+  alimentacion: {
+    label: "Alimentación y Evolución",
+    icon: Activity,
+    color: "amber",
+    textClass: "text-amber-600 dark:text-amber-400",
+    bgClass: "bg-amber-50 dark:bg-amber-950/20",
+    borderClass: "border-amber-200 dark:border-amber-900/50",
+    glowClass: "shadow-amber-500/10 dark:shadow-amber-400/5",
+  }
+};
+
+// Map of causal connections between milestones
+const TIMELINE_CONNECTIONS: Record<string, string[]> = {
+  "domesticacion-neolitica": ["mutacion-lactasa"],
+  "mutacion-lactasa": ["domesticacion-neolitica"],
+  
+  "bentham-sufrimiento": ["martins-act"],
+  "martins-act": ["bentham-sufrimiento"],
+  
+  "chicago-stock-yards": ["macrogranjas-mediados-siglo"],
+  
+  "watson-veganismo-origen": ["sintesis-b12"],
+  "sintesis-b12": ["watson-veganismo-origen", "consenso-nutricional-and", "agricultura-celular-era"],
+  
+  "macrogranjas-mediados-siglo": ["informe-brambell-ley", "singer-regan-auge", "chicago-stock-yards"],
+  "informe-brambell-ley": ["macrogranjas-mediados-siglo", "tratado-lisboa", "end-the-cage-age-initiative"],
+  "singer-regan-auge": ["macrogranjas-mediados-siglo", "declaracion-montreal"],
+  
+  "tratado-lisboa": ["informe-brambell-ley", "reforma-codigo-civil-es"],
+  
+  "declaracion-cambridge": ["reforma-codigo-civil-es", "declaracion-montreal"],
+  "declaracion-montreal": ["declaracion-cambridge", "singer-regan-auge"],
+  
+  "consenso-nutricional-and": ["sintesis-b12"],
+  "agricultura-celular-era": ["sintesis-b12"],
+  
+  "end-the-cage-age-initiative": ["informe-brambell-ley"],
+  "reforma-codigo-civil-es": ["declaracion-cambridge", "tratado-lisboa"]
+};
+
+interface MilestoneWithTrack extends TimelineMilestone {
+  trackId: string;
+  color: string;
+}
+
+interface Era {
+  id: string;
+  name: string;
+  period: string;
+  minYear: number;
+  maxYear: number;
+}
+
+const ERAS: Era[] = [
+  { id: "antiguedad", name: "Orígenes y Antigüedad", period: "Hasta el año 500 d.C.", minYear: -Infinity, maxYear: 500 },
+  { id: "medieval-ilustracion", name: "Medievo a la Ilustración", period: "Años 500 a 1800 d.C.", minYear: 501, maxYear: 1800 },
+  { id: "industrializacion", name: "Industrialización y Siglo XIX", period: "Años 1800 a 1940 d.C.", minYear: 1801, maxYear: 1940 },
+  { id: "siglo-xx", name: "El Siglo XX Moderno", period: "Años 1940 a 2000 d.C.", minYear: 1941, maxYear: 2000 },
+  { id: "siglo-xxi", name: "El Siglo XXI y el Futuro", period: "Años 2001 al presente", minYear: 2001, maxYear: Infinity }
+];
 
 // Tooltip component for academic citations (matching ConceptExplorer cohesion)
 interface ReferenceTooltipProps {
@@ -138,30 +230,222 @@ interface TimelineExplorerProps {
 }
 
 export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplorerProps) {
-  const [activeTimelineId, setActiveTimelineId] = useState<"usos" | "etica" | "regulaciones" | "alimentacion">("usos");
+  // Layout state toggle: swimlanes (visually stunning grid) vs detallado (original split view with comparison)
+  const [layoutView, setLayoutView] = useState<"swimlanes" | "detallado">("swimlanes");
+  
+  // Shared state
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedMilestone, setSelectedMilestone] = useState<TimelineMilestone | null>(null);
+  const [hoveredMilestoneId, setHoveredMilestoneId] = useState<string | null>(null);
+  const [expandedMilestones, setExpandedMilestones] = useState<Record<string, boolean>>({});
+
+  // Original Detallado view states
+  const [activeTimelineId, setActiveTimelineId] = useState<"usos" | "etica" | "regulaciones" | "alimentacion">("usos");
   const [isBibliographyOpen, setIsBibliographyOpen] = useState(false);
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
-
-  // Comparison Mode States
   const [isCompareMode, setIsCompareMode] = useState(false);
   const [compareA, setCompareA] = useState<TimelineMilestone | null>(null);
   const [compareB, setCompareB] = useState<TimelineMilestone | null>(null);
+
+  // Parallel swimlanes state
+  const [mobileActiveTrack, setMobileActiveTrack] = useState<string>("todos");
+  const [svgPaths, setSvgPaths] = useState<{ path: string; color: string; fromId: string; toId: string }[]>([]);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
 
   // Reset bibliography collapse on milestone change
   useEffect(() => {
     setIsBibliographyOpen(false);
   }, [selectedMilestone]);
 
+  // Flatten all milestones from groups and add track information
+  const allMilestones: MilestoneWithTrack[] = TIMELINE_DATA.flatMap((group: TimelineGroup) =>
+    group.milestones.map((milestone: TimelineMilestone) => ({
+      ...milestone,
+      trackId: group.id,
+      color: group.color
+    }))
+  ).sort((a, b) => a.year - b.year);
+
+  // Toggle card expansion in parallel view
+  const toggleExpand = (id: string) => {
+    setExpandedMilestones(prev => ({
+      ...prev,
+      [id]: !prev[id]
+    }));
+    setTimeout(calculateConnections, 250);
+  };
+
+  // Focus and scroll to a milestone
+  const focusMilestone = (id: string) => {
+    setSelectedMilestone(allMilestones.find(m => m.id === id) || null);
+    setHoveredMilestoneId(id);
+    
+    // Autoexpand focused card so details are visible immediately
+    setExpandedMilestones(prev => ({ ...prev, [id]: true }));
+
+    const cardElement = document.getElementById(`milestone-card-${id}`);
+    if (cardElement) {
+      cardElement.scrollIntoView({ behavior: "smooth", block: "center" });
+      cardElement.classList.add("ring-2", "ring-purple-500", "dark:ring-purple-400");
+      setTimeout(() => {
+        cardElement.classList.remove("ring-2", "ring-purple-500", "dark:ring-purple-400");
+      }, 1500);
+    }
+    setTimeout(calculateConnections, 250);
+  };
+
+  // Helper to retrieve causes and effects dynamically based on year order
+  const getCausality = (id: string) => {
+    const connectedIds = TIMELINE_CONNECTIONS[id] || [];
+    const current = allMilestones.find(m => m.id === id);
+    if (!current) return { causes: [], effects: [] };
+
+    const causes: MilestoneWithTrack[] = [];
+    const effects: MilestoneWithTrack[] = [];
+
+    connectedIds.forEach(connId => {
+      const linked = allMilestones.find(m => m.id === connId);
+      if (linked) {
+        if (linked.year < current.year) {
+          causes.push(linked);
+        } else {
+          effects.push(linked);
+        }
+      }
+    });
+
+    return { causes, effects };
+  };
+
+  // Calculate coordinates of connection lines relative to main container (for swimlanes)
+  const calculateConnections = () => {
+    if (!containerRef.current || !hoveredMilestoneId || layoutView !== "swimlanes") {
+      setSvgPaths([]);
+      return;
+    }
+
+    const activeId = hoveredMilestoneId;
+    const connectedIds = TIMELINE_CONNECTIONS[activeId] || [];
+    if (connectedIds.length === 0) {
+      setSvgPaths([]);
+      return;
+    }
+
+    const cRect = containerRef.current.getBoundingClientRect();
+    const fromEl = document.getElementById(`milestone-card-${activeId}`);
+    if (!fromEl) {
+      setSvgPaths([]);
+      return;
+    }
+
+    const paths: { path: string; color: string; fromId: string; toId: string }[] = [];
+
+    connectedIds.forEach(toId => {
+      const toEl = document.getElementById(`milestone-card-${toId}`);
+      if (!toEl) return;
+
+      const fRect = fromEl.getBoundingClientRect();
+      const tRect = toEl.getBoundingClientRect();
+
+      // Find center points relative to timeline wrapper container
+      const fX = fRect.left + fRect.width / 2 - cRect.left;
+      const fY = fRect.top + fRect.height / 2 - cRect.top;
+      const tX = tRect.left + tRect.width / 2 - cRect.left;
+      const tY = tRect.top + tRect.height / 2 - cRect.top;
+
+      let startX = fX, startY = fY;
+      let endX = tX, endY = tY;
+
+      // Attachment points on card borders
+      if (Math.abs(fX - tX) > Math.abs(fY - tY)) {
+        // Horizontal connection
+        if (fX < tX) {
+          startX = fRect.right - cRect.left;
+          endX = tRect.left - cRect.left;
+        } else {
+          startX = fRect.left - cRect.left;
+          endX = tRect.right - cRect.left;
+        }
+      } else {
+        // Vertical connection
+        if (fY < tY) {
+          startY = fRect.bottom - cRect.top;
+          endY = tRect.top - cRect.top;
+        } else {
+          startY = fRect.top - cRect.top;
+          endY = tRect.bottom - cRect.top;
+        }
+      }
+
+      // Draw dynamic Bezier paths with controls extending outward
+      const dx = Math.abs(startX - endX);
+      const dy = Math.abs(startY - endY);
+      
+      let cp1X = startX;
+      let cp1Y = startY;
+      let cp2X = endX;
+      let cp2Y = endY;
+
+      if (dx > dy) {
+        const offset = dx * 0.4;
+        cp1X += (endX > startX) ? offset : -offset;
+        cp2X += (startX > endX) ? offset : -offset;
+      } else {
+        const offset = dy * 0.4;
+        cp1Y += (endY > startY) ? offset : -offset;
+        cp2Y += (startY > endY) ? offset : -offset;
+      }
+
+      // Match connection track color
+      const linkedMilestone = allMilestones.find(m => m.id === toId);
+      const fromMilestone = allMilestones.find(m => m.id === activeId);
+      const color = TRACK_META[fromMilestone?.trackId || "usos"]?.color || "violet";
+
+      paths.push({
+        path: `M ${startX} ${startY} C ${cp1X} ${cp1Y}, ${cp2X} ${cp2Y}, ${endX} ${endY}`,
+        color,
+        fromId: activeId,
+        toId
+      });
+    });
+
+    setSvgPaths(paths);
+  };
+
+  // Re-calculate paths on hover, scroll, or resize
+  useEffect(() => {
+    calculateConnections();
+    
+    window.addEventListener("resize", calculateConnections);
+    document.addEventListener("transitionend", calculateConnections);
+
+    return () => {
+      window.removeEventListener("resize", calculateConnections);
+      document.removeEventListener("transitionend", calculateConnections);
+    };
+  }, [hoveredMilestoneId, expandedMilestones, layoutView]);
+
+  // Original Detallado view helper
   const activeGroup = TIMELINE_DATA.find((g) => g.id === activeTimelineId)!;
 
-  const filteredMilestones = activeGroup.milestones.filter((milestone) => {
+  // Search filter applied to milestones
+  const filteredMilestones = allMilestones.filter((milestone) => {
+    const groupMeta = TRACK_META[milestone.trackId];
     const matchesSearch = 
       milestone.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
       milestone.shortDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
       milestone.longDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      milestone.yearLabel.toLowerCase().includes(searchQuery.toLowerCase());
+      milestone.yearLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      milestone.scientificFacts.some(f => f.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (groupMeta && groupMeta.label.toLowerCase().includes(searchQuery.toLowerCase()));
+    
+    // In detallado view, filter also by activeTimelineId
+    if (layoutView === "detallado" && !isCompareMode) {
+      return matchesSearch && milestone.trackId === activeTimelineId;
+    }
+    
     return matchesSearch;
   });
 
@@ -169,11 +453,11 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
     switch (id) {
       case "usos":
         return {
-          bg: "bg-blue-500/10 dark:bg-blue-500/5",
-          border: "border-blue-500/20 dark:border-blue-500/30",
-          text: "text-blue-600 dark:text-blue-400",
-          glow: "bg-blue-500",
-          badge: "bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-500/30"
+          bg: "bg-sky-500/10 dark:bg-sky-500/5",
+          border: "border-sky-500/20 dark:border-sky-500/30",
+          text: "text-sky-600 dark:text-sky-400",
+          glow: "bg-sky-500",
+          badge: "bg-sky-500/10 text-sky-600 dark:text-sky-400 border border-sky-500/30"
         };
       case "etica":
         return {
@@ -214,13 +498,11 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
 
   const handleSelectMilestone = (m: TimelineMilestone) => {
     if (isCompareMode) {
-      // In comparison mode, assign to A first or B next
       if (!compareA) {
         setCompareA(m);
       } else if (!compareB && compareA.id !== m.id) {
         setCompareB(m);
       } else {
-        // Shift A to B, and make new selected as A
         setCompareA(m);
         setCompareB(null);
       }
@@ -232,11 +514,9 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
     }
   };
 
-  // Dedicated Lag Analysis Calculator
+  // Lag analysis deconstruction calculations
   const getLagAnalysis = (mA: TimelineMilestone, mB: TimelineMilestone) => {
     const diff = Math.abs(mA.year - mB.year);
-    
-    // Custom analysis for famous comparisons
     const combinedIds = [mA.id, mB.id];
     
     if (combinedIds.includes("macrogranjas-mediados-siglo") && combinedIds.includes("declaracion-cambridge")) {
@@ -271,7 +551,6 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
       };
     }
 
-    // Dynamic Fallback
     const older = mA.year < mB.year ? mA : mB;
     const newer = mA.year < mB.year ? mB : mA;
     return {
@@ -279,6 +558,51 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
       title: `Desfase Cronológico de ${diff} años`,
       desc: `Este intervalo de ${diff} años separa el hito "${older.title}" (${older.yearLabel}) del desarrollo "${newer.title}" (${newer.yearLabel}). Este vacío temporal ilustra el desfase sistémico existente entre el desarrollo de infraestructuras de instrumentalización animal, la teorización filosófica de los deberes de compasión y los retrasos históricos del ordenamiento jurídico para codificar estos avances en los marcos de justicia de los Estados.`
     };
+  };
+
+  const getComparisonYearScale = (mA: TimelineMilestone, mB: TimelineMilestone) => {
+    const oldest = mA.year < mB.year ? mA : mB;
+    const newest = mA.year < mB.year ? mB : mA;
+    return (
+      <div className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between items-stretch gap-6">
+        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-zinc-300 dark:bg-zinc-800 pointer-events-none" />
+        
+        <div className="flex items-center justify-between relative z-10">
+          <div className="w-[45%] text-left">
+            <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase block mb-1">HITO INICIAL</span>
+            <div className="font-extrabold text-sm text-zinc-900 dark:text-white leading-tight">{oldest.title}</div>
+            <div className="font-mono text-xs text-zinc-500 mt-1 font-semibold">{oldest.yearLabel}</div>
+          </div>
+          <div className="w-10 h-10 rounded-full bg-zinc-250 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center font-mono text-[10px] font-bold text-zinc-650 dark:text-zinc-300">
+            A
+          </div>
+          <div className="w-[45%] text-right">
+            <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase block mb-1">HITO POSTERIOR</span>
+            <div className="font-extrabold text-sm text-zinc-900 dark:text-white leading-tight">{newest.title}</div>
+            <div className="font-mono text-xs text-zinc-500 mt-1 font-semibold">{newest.yearLabel}</div>
+          </div>
+        </div>
+
+        <div className="w-full bg-zinc-200 dark:bg-zinc-950/80 h-3 rounded-full relative border border-zinc-300/40 dark:border-zinc-850">
+          <div className="absolute top-0 bottom-0 left-0 right-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-emerald-500/20 rounded-full" />
+          <motion.div 
+            initial={{ left: "0%", right: "100%" }}
+            animate={{ left: "12%", right: "12%" }}
+            transition={{ type: "spring", duration: 1 }}
+            className="absolute top-0 bottom-0 bg-zinc-900 dark:bg-white rounded-full"
+          />
+          <div className="absolute top-1/2 -translate-y-1/2 left-[12%] w-2 h-2 rounded-full bg-zinc-900 dark:bg-white ring-4 ring-zinc-500/20" />
+          <div className="absolute top-1/2 -translate-y-1/2 right-[12%] w-2 h-2 rounded-full bg-zinc-900 dark:bg-white ring-4 ring-zinc-500/20" />
+        </div>
+
+        <div className="text-center relative z-10 bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-850">
+          <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 font-mono tracking-tight">
+            {Math.abs(mA.year - mB.year)} años
+          </div>
+          <span className="text-[9px] font-mono text-zinc-450 dark:text-zinc-500 uppercase font-semibold">BRECHA DE INERCIA MORAL</span>
+        </div>
+      </div>
+    );
   };
 
   const renderDetailsContent = (milestone: TimelineMilestone) => {
@@ -353,7 +677,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                     transition={{ duration: 0.2 }}
                     className="overflow-hidden"
                   >
-                    <ul className="mt-2.5 space-y-2.5 pl-1.5">
+                    <ul className="mt-2.5 space-y-2.5 pl-1.5 font-mono text-[10.5px]">
                       {milestone.references.map((ref) => (
                         <li
                           key={ref.id}
@@ -413,411 +737,933 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
   const getTimelineIcon = (id: string) => {
     switch (id) {
       case "usos":
-        return <Activity className="w-4 h-4" />;
+        return <Layers className="w-4 h-4" />;
       case "etica":
         return <Scale className="w-4 h-4" />;
       case "regulaciones":
         return <Globe className="w-4 h-4" />;
       case "alimentacion":
-        return <Clock className="w-4 h-4" />;
+        return <Activity className="w-4 h-4" />;
       default:
         return <Calendar className="w-4 h-4" />;
     }
   };
 
-  const getComparisonYearScale = (mA: TimelineMilestone, mB: TimelineMilestone) => {
-    const oldest = mA.year < mB.year ? mA : mB;
-    const newest = mA.year < mB.year ? mB : mA;
-    return (
-      <div className="w-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800/80 rounded-2xl p-6 relative overflow-hidden flex flex-col justify-between items-stretch gap-6">
-        <div className="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-0.5 bg-zinc-300 dark:bg-zinc-800 pointer-events-none" />
-        
-        <div className="flex items-center justify-between relative z-10">
-          <div className="w-[45%] text-left">
-            <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase block mb-1">HITO INICIAL</span>
-            <div className="font-extrabold text-sm text-zinc-900 dark:text-white leading-tight">{oldest.title}</div>
-            <div className="font-mono text-xs text-zinc-500 mt-1 font-semibold">{oldest.yearLabel}</div>
-          </div>
-          <div className="w-10 h-10 rounded-full bg-zinc-250 dark:bg-zinc-800/80 border border-zinc-300 dark:border-zinc-700 flex items-center justify-center font-mono text-[10px] font-bold text-zinc-650 dark:text-zinc-300">
-            A
-          </div>
-          <div className="w-[45%] text-right">
-            <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase block mb-1">HITO POSTERIOR</span>
-            <div className="font-extrabold text-sm text-zinc-900 dark:text-white leading-tight">{newest.title}</div>
-            <div className="font-mono text-xs text-zinc-500 mt-1 font-semibold">{newest.yearLabel}</div>
-          </div>
-        </div>
-
-        <div className="w-full bg-zinc-200 dark:bg-zinc-950/80 h-3 rounded-full relative border border-zinc-300/40 dark:border-zinc-850">
-          <div className="absolute top-0 bottom-0 left-0 right-0 bg-gradient-to-r from-blue-500/20 via-purple-500/20 to-emerald-500/20 rounded-full" />
-          <motion.div 
-            initial={{ left: "0%", right: "100%" }}
-            animate={{ left: "12%", right: "12%" }}
-            transition={{ type: "spring", duration: 1 }}
-            className="absolute top-0 bottom-0 bg-zinc-900 dark:bg-white rounded-full"
-          />
-          <div className="absolute top-1/2 -translate-y-1/2 left-[12%] w-2 h-2 rounded-full bg-zinc-900 dark:bg-white ring-4 ring-zinc-500/20" />
-          <div className="absolute top-1/2 -translate-y-1/2 right-[12%] w-2 h-2 rounded-full bg-zinc-900 dark:bg-white ring-4 ring-zinc-500/20" />
-        </div>
-
-        <div className="text-center relative z-10 bg-zinc-50 dark:bg-zinc-950 p-4 rounded-xl border border-zinc-200 dark:border-zinc-850">
-          <div className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-purple-500 font-mono tracking-tight">
-            {Math.abs(mA.year - mB.year)} años
-          </div>
-          <span className="text-[9px] font-mono text-zinc-450 dark:text-zinc-500 uppercase font-semibold">BRECHA DE INERCIA MORAL</span>
-        </div>
-      </div>
-    );
-  };
-
   return (
     <div className="space-y-6 w-full select-none">
       
-      {/* Upper Mode Selectors: Chronology Selection & Comparison Toggle */}
-      <div className="flex flex-col lg:flex-row gap-4 items-center justify-between w-full">
+      {/* 🌟 LAYOUT VIEWS SELECTOR TOGGLE AND COMPARISON MODE (Unified Bar) 🌟 */}
+      <div className="flex flex-col lg:flex-row gap-4 items-center justify-between w-full border-b border-zinc-200 dark:border-zinc-900 pb-4">
         
-        {/* Selector de Pestañas de Línea Temporal (oculto en CompareMode si se prefiere, o activo para filtrar) */}
-        <div className="flex flex-wrap bg-zinc-150 dark:bg-zinc-900/60 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-900/60 transition-all shadow-inner w-full lg:w-auto overflow-x-auto custom-scrollbar">
-          {TIMELINE_DATA.map((t) => {
-            const isActive = activeTimelineId === t.id;
-            const tColor = getTimelineColorClasses(t.id);
-            return (
-              <button
-                key={t.id}
-                onClick={() => setActiveTimelineId(t.id)}
-                className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-tight transition-all duration-300 cursor-pointer shrink-0 ${
-                  isActive
-                    ? `bg-white dark:bg-zinc-800 ${tColor.text} shadow-sm border border-zinc-200/80 dark:border-transparent scale-102`
-                    : "text-zinc-500 dark:text-zinc-450 hover:text-zinc-800 dark:hover:text-white"
-                }`}
-              >
-                {getTimelineIcon(t.id)}
-                <span>{t.title}</span>
-              </button>
-            );
-          })}
+        {/* Layout View Toggler */}
+        <div className="flex bg-zinc-100 dark:bg-zinc-900/60 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-900 transition-colors shadow-inner">
+          <button
+            onClick={() => {
+              setLayoutView("swimlanes");
+              setIsCompareMode(false);
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer ${
+              layoutView === "swimlanes"
+                ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm border border-zinc-200/50 dark:border-transparent scale-[1.01]"
+                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+            }`}
+          >
+            Vista Paralela (Swimlanes)
+          </button>
+          <button
+            onClick={() => setLayoutView("detallado")}
+            className={`px-4 py-2 rounded-xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer ${
+              layoutView === "detallado"
+                ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm border border-zinc-200/50 dark:border-transparent scale-[1.01]"
+                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+            }`}
+          >
+            Explorador Detallado
+          </button>
         </div>
 
-        {/* Toggle del Modo Comparador */}
-        <button
-          onClick={() => {
-            setIsCompareMode(!isCompareMode);
-            // Reset comparators
-            setCompareA(null);
-            setCompareB(null);
-            setSelectedMilestone(null);
-          }}
-          className={`flex items-center justify-center gap-2 px-4 py-2.5 rounded-2xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer border ${
-            isCompareMode
-              ? "bg-gradient-to-r from-cyan-500/10 to-purple-500/10 border-cyan-500 text-cyan-600 dark:text-cyan-400 shadow-md ring-1 ring-cyan-500/30"
-              : "bg-white dark:bg-zinc-950 hover:bg-zinc-150/40 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-850 text-zinc-650 dark:text-zinc-400"
-          }`}
-        >
-          <GitCompare className="w-4 h-4" />
-          <span>{isCompareMode ? "Desactivar Comparador" : "Modo Desfase Ético-Industrial"}</span>
-        </button>
+        {/* Action Toggle (Compare Mode / Free Text Search status) */}
+        <div className="flex items-center gap-3 w-full lg:w-auto justify-end">
+          {layoutView === "detallado" && (
+            <button
+              onClick={() => {
+                setIsCompareMode(!isCompareMode);
+                setCompareA(null);
+                setCompareB(null);
+                setSelectedMilestone(null);
+              }}
+              className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer border ${
+                isCompareMode
+                  ? "bg-cyan-500/10 border-cyan-500 text-cyan-600 dark:text-cyan-400 shadow-md ring-1 ring-cyan-500/30"
+                  : "bg-white dark:bg-zinc-950 hover:bg-zinc-150/40 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-850 text-zinc-650 dark:text-zinc-400"
+              }`}
+            >
+              <GitCompare className="w-4 h-4" />
+              <span>{isCompareMode ? "Desactivar Comparador" : "Modo Desfase Ético-Industrial"}</span>
+            </button>
+          )}
 
-      </div>
-
-      {/* Main timeline explorer layout */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[620px] border border-zinc-200 dark:border-zinc-850 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300">
-        
-        {/* Left Side: Timeline vertical flow (lg:col-span-7) */}
-        <div className="lg:col-span-7 p-6 bg-zinc-50/50 dark:bg-zinc-950/30 relative min-h-[480px] lg:min-h-[580px] transition-colors duration-300 flex flex-col justify-between space-y-6">
-          
-          <div className="space-y-4 flex-1">
-            {/* Header info / Search bar */}
-            <div className="flex flex-col md:flex-row gap-4 items-stretch md:items-center justify-between">
-              
-              <div className="flex-1 space-y-1">
-                <h3 className="text-sm font-extrabold text-zinc-900 dark:text-white tracking-tight uppercase font-mono">
-                  {isCompareMode ? "🔍 SELECCIONA DOS HITOS PARA COMPARAR" : activeGroup.title}
-                </h3>
-                <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-500 font-light select-text">
-                  {isCompareMode 
-                    ? "Haz clic en dos hitos cualesquiera de la lista (incluso cambiando de pestaña) para proyectar su inercia temporal." 
-                    : activeGroup.description
-                  }
-                </p>
-              </div>
-
-              {!isCompareMode && (
-                <div className="relative shrink-0 w-full md:w-56">
-                  <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-450" />
-                  <input
-                    type="text"
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Buscar hito..."
-                    className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-200 dark:border-zinc-800 focus:border-zinc-400 dark:focus:border-zinc-700 rounded-xl pl-9 pr-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-450 outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-750 transition-all font-sans"
-                  />
-                </div>
-              )}
-
-            </div>
-
-            {/* Comparison states indicator when CompareMode is active */}
-            {isCompareMode && (
-              <div className="grid grid-cols-2 gap-4 p-3 bg-zinc-100/50 dark:bg-zinc-950/40 rounded-2xl border border-zinc-200 dark:border-zinc-850">
-                <div className="text-left space-y-1">
-                  <span className="text-[9px] font-mono tracking-widest text-zinc-450 block uppercase">HITO A</span>
-                  {compareA ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="p-1 px-1.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 font-bold select-none">{compareA.yearLabel}</span>
-                      <span className="text-xs font-bold text-zinc-850 dark:text-zinc-200 truncate">{compareA.title}</span>
-                    </div>
-                  ) : (
-                    <span className="text-xs font-light text-zinc-450 italic">Selecciona un hito...</span>
-                  )}
-                </div>
-                <div className="text-left space-y-1 border-l border-zinc-200 dark:border-zinc-800 pl-4">
-                  <span className="text-[9px] font-mono tracking-widest text-zinc-450 block uppercase">HITO B</span>
-                  {compareB ? (
-                    <div className="flex items-center gap-1.5">
-                      <span className="p-1 px-1.5 rounded bg-purple-500/10 border border-purple-500/30 text-[9px] font-mono text-purple-600 dark:text-purple-400 font-bold select-none">{compareB.yearLabel}</span>
-                      <span className="text-xs font-bold text-zinc-850 dark:text-zinc-200 truncate">{compareB.title}</span>
-                    </div>
-                  ) : (
-                    <span className="text-xs font-light text-zinc-450 italic">Selecciona otro hito...</span>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {/* Timeline Vertical Container Scroll Area */}
-            <div className="relative pl-6 lg:pl-8 border-l border-zinc-300 dark:border-zinc-800 space-y-6 max-h-[440px] lg:max-h-[460px] overflow-y-auto pr-1.5 custom-scrollbar py-2">
-              
-              {filteredMilestones.length === 0 ? (
-                <div className="py-16 text-center space-y-3 -ml-6 lg:-ml-8 border-l-0">
-                  <Clock className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
-                  <div className="space-y-1">
-                    <h4 className="text-sm font-semibold text-zinc-900 dark:text-white">Sin correspondencias</h4>
-                    <p className="text-xs text-zinc-500 font-light">Ningún hito coincide con el término de búsqueda.</p>
-                  </div>
-                </div>
-              ) : (
-                filteredMilestones.map((m) => {
-                  const isSelected = selectedMilestone?.id === m.id;
-                  const isComparingA = compareA?.id === m.id;
-                  const isComparingB = compareB?.id === m.id;
-                  
-                  // Active borders
-                  let borderClass = "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-100/30 dark:hover:bg-zinc-900/10";
-                  let bgGlow = "";
-                  
-                  if (isCompareMode) {
-                    if (isComparingA) {
-                      borderClass = "border-cyan-500 ring-1 ring-cyan-500/25";
-                      bgGlow = "bg-cyan-500/5";
-                    } else if (isComparingB) {
-                      borderClass = "border-purple-500 ring-1 ring-purple-500/25";
-                      bgGlow = "bg-purple-500/5";
-                    }
-                  } else if (isSelected) {
-                    borderClass = `border-${activeTimelineId}-500 ring-1 ring-${activeTimelineId}-500/25`;
-                    borderClass = activeTimelineId === "usos" ? "border-blue-500 ring-1 ring-blue-500/25" :
-                                  activeTimelineId === "etica" ? "border-purple-500 ring-1 ring-purple-500/25" :
-                                  activeTimelineId === "regulaciones" ? "border-emerald-500 ring-1 ring-emerald-500/25" :
-                                  "border-amber-500 ring-1 ring-amber-500/25";
-                    bgGlow = colors.bg;
-                  }
-
-                  return (
-                    <motion.div
-                      key={m.id}
-                      onClick={() => handleSelectMilestone(m)}
-                      className={`group p-4.5 rounded-2xl border text-left cursor-pointer transition-all duration-300 relative overflow-hidden bg-white/40 dark:bg-zinc-950/15 ${borderClass} ${bgGlow} ${
-                        (isSelected || isComparingA || isComparingB) ? "shadow-md" : "hover:-translate-y-0.5"
-                      }`}
-                    >
-                      {/* Left vertical axis timeline bullet */}
-                      <div className="absolute -left-[31px] lg:-left-[39px] top-[26px] z-10 flex h-4 w-4 shrink-0 relative items-center justify-center">
-                        <span className={`absolute inline-flex rounded-full h-2.5 w-2.5 transition-transform group-hover:scale-125 ${
-                          (isSelected || isComparingA || isComparingB) ? colors.glow : "bg-zinc-300 dark:bg-zinc-700"
-                        }`} />
-                        {(isSelected || isComparingA || isComparingB) && (
-                          <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-40 ${colors.glow}`} />
-                        )}
-                      </div>
-
-                      {/* Header containing year badge and comparisons */}
-                      <div className="flex items-center justify-between gap-3 mb-2">
-                        <span className={`text-[9px] font-mono tracking-wider px-2 py-0.5 rounded-md font-bold ${
-                          isComparingA ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30" :
-                          isComparingB ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30" :
-                          colors.badge
-                        }`}>
-                          {m.yearLabel}
-                        </span>
-                        
-                        {isCompareMode && (
-                          <div className="text-[8px] font-mono font-bold uppercase tracking-wider flex items-center gap-1 text-zinc-450 dark:text-zinc-555">
-                            {isComparingA && <span className="text-cyan-500">Seleccionado Hito A</span>}
-                            {isComparingB && <span className="text-purple-500">Seleccionado Hito B</span>}
-                            {!isComparingA && !isComparingB && <span>Comparar +</span>}
-                          </div>
-                        )}
-                      </div>
-
-                      {/* Title & Short Description */}
-                      <h4 className="text-xs sm:text-sm font-extrabold text-zinc-900 dark:text-white tracking-tight leading-snug group-hover:text-black dark:group-hover:text-white transition-colors mb-1">
-                        {m.title}
-                      </h4>
-
-                      <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400 font-light line-clamp-2">
-                        {m.shortDesc}
-                      </p>
-
-                      <div className="mt-3 pt-3 border-t border-zinc-200/50 dark:border-zinc-800/40 flex justify-between items-center text-[9px] font-mono text-zinc-450">
-                        <span>Evidencias: {m.scientificFacts.length}</span>
-                        <span className={`${
-                          isComparingA ? "text-cyan-400 hover:underline font-bold" :
-                          isComparingB ? "text-purple-400 hover:underline font-bold" :
-                          "text-zinc-650 dark:text-zinc-350 hover:underline font-bold"
-                        } transition-all`}>
-                          {isCompareMode ? "Vincular a Comparativa →" : "Detalles Académicos →"}
-                        </span>
-                      </div>
-
-                    </motion.div>
-                  );
-                })
-              )}
-
-            </div>
+          {/* Search bar inside the upper controls for maximum space */}
+          <div className="relative w-full lg:w-56">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-zinc-450" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Buscar hito..."
+              className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 focus:border-zinc-400 dark:focus:border-zinc-700 rounded-xl pl-9 pr-3 py-2 text-xs text-zinc-900 dark:text-white placeholder-zinc-450 outline-none focus:ring-1 focus:ring-zinc-300 dark:focus:ring-zinc-750 transition-all font-sans"
+            />
           </div>
         </div>
 
-        {/* Right Side: Detailed analysis panel / Comparison Mode Dashboard (lg:col-span-5) */}
-        <div className="lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-850 p-6 lg:p-8 flex flex-col justify-between bg-zinc-50/20 dark:bg-zinc-900/25 transition-colors duration-300 sticky top-24 self-start max-h-[85vh] overflow-y-auto custom-scrollbar">
+      </div>
+
+      {/* ========================================== */}
+      {/* 1. SWIMLANES LAYOUT VIEW (Parallel Lanes)   */}
+      {/* ========================================== */}
+      {layoutView === "swimlanes" && (
+        <div className="space-y-8 w-full">
           
-          <AnimatePresence mode="wait">
-            
-            {/* COMPARISON MODE ACTIVE */}
-            {isCompareMode ? (
-              <motion.div
-                key="comparison-dashboard"
-                initial={{ opacity: 0, x: 15 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -15 }}
-                transition={{ duration: 0.2 }}
-                className="space-y-6 h-full flex flex-col justify-between"
-              >
-                <div className="space-y-4">
-                  <div className="flex items-center gap-1.5">
-                    <span className="p-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 font-bold">HERRAMIENTA</span>
-                    <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">DESFASE ÉTICO-INDUSTRIAL</h4>
-                  </div>
+          {/* Interactive Graphical Timeline Ruler Axis */}
+          <div className="bg-white/60 dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-900 rounded-3xl p-6 shadow-sm relative overflow-hidden backdrop-blur-md transition-all">
+            <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center gap-2">
+                <Clock className="w-4 h-4 text-purple-500 animate-pulse" />
+                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase font-mono tracking-wider">
+                  Eje Cronológico Gráfico e Interactivo
+                </span>
+              </div>
+              <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-650 hidden sm:inline">
+                Pasa el cursor o haz clic en los hitos para saltar en el tiempo
+              </span>
+            </div>
+
+            {/* Scrollable Timeline line container */}
+            <div className="relative py-6 overflow-x-auto custom-scrollbar flex items-center min-w-full">
+              <div className="absolute left-0 right-0 h-0.5 bg-zinc-200 dark:bg-zinc-800 z-0 top-1/2 -translate-y-1/2 min-w-[1050px]" />
+              <div className="flex justify-between items-center w-full min-w-[1050px] relative z-10 px-6">
+                {allMilestones.map((m) => {
+                  const isHovered = hoveredMilestoneId === m.id;
+                  const isSelected = selectedMilestone?.id === m.id;
+                  const meta = TRACK_META[m.trackId];
                   
-                  <p className="text-xs text-zinc-500 dark:text-zinc-500 font-light leading-relaxed">
-                    Compara el retraso o "gap" cultural entre los hitos históricos de opresión y el reconocimiento filosófico o legal de la sintiencia animal.
-                  </p>
-
-                  {compareA && compareB ? (
-                    <div className="space-y-6 pt-2">
-                      {/* Graphics scale */}
-                      {getComparisonYearScale(compareA, compareB)}
-
-                      {/* Deconstruction text */}
-                      <div className="bg-white dark:bg-zinc-950/60 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-850 space-y-3">
-                        <div className="flex items-start gap-1.5">
-                          <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                          <h5 className="text-xs font-bold text-zinc-900 dark:text-white font-sans leading-snug">
-                            {getLagAnalysis(compareA, compareB).title}
-                          </h5>
-                        </div>
-                        <p className="text-xs leading-relaxed text-zinc-650 dark:text-zinc-400 font-light select-text">
-                          {getLagAnalysis(compareA, compareB).desc}
-                        </p>
+                  return (
+                    <div 
+                      key={m.id}
+                      onMouseEnter={() => setHoveredMilestoneId(m.id)}
+                      onMouseLeave={() => !selectedMilestone && setHoveredMilestoneId(null)}
+                      onClick={() => focusMilestone(m.id)}
+                      className="flex flex-col items-center relative cursor-pointer group"
+                    >
+                      <div className={`w-4.5 h-4.5 rounded-full border-2 border-white dark:border-zinc-950 transition-all duration-300 flex items-center justify-center relative ${
+                        isSelected || isHovered ? "scale-125 z-20" : "scale-100 z-10 hover:scale-110"
+                      } ${
+                        m.trackId === "usos" 
+                          ? "bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]" 
+                          : m.trackId === "etica" 
+                          ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" 
+                          : m.trackId === "regulaciones" 
+                          ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
+                          : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
+                      }`}
+                      >
+                        {(isSelected || isHovered) && (
+                          <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-zinc-950 animate-ping" />
+                        )}
                       </div>
+                      <span className={`text-[9px] font-mono font-bold mt-2.5 tracking-tight transition-colors ${
+                        isSelected || isHovered ? meta.textClass : "text-zinc-450 dark:text-zinc-650"
+                      }`}>
+                        {m.yearLabel.replace("c. ", "").replace(" a.C.", "aC").replace(" d.C.", "")}
+                      </span>
 
-                      {/* Scientific Facts Comparison bullet */}
-                      <div className="space-y-2 text-[10.5px] leading-relaxed text-zinc-550 dark:text-zinc-500 font-sans border-l-2 border-zinc-300 dark:border-zinc-800 pl-3">
-                        💡 **Reflexión Socrática:** Las leyes de mercado y las inercias culturales actúan como diques de contención ante los hechos empíricos y lógicos demostrados. Reducir esta brecha depende del compromiso moral individual directo.
+                      {/* Tooltip popup */}
+                      <AnimatePresence>
+                        {isHovered && (
+                          <motion.div
+                            initial={{ opacity: 0, scale: 0.9, y: 8 }}
+                            animate={{ opacity: 1, scale: 1, y: 0 }}
+                            exit={{ opacity: 0, scale: 0.9, y: 8 }}
+                            className="absolute bottom-full mb-3.5 w-44 p-3 bg-zinc-950 dark:bg-zinc-900 text-white rounded-xl shadow-xl border border-zinc-800 z-30 text-center pointer-events-none"
+                          >
+                            <span className={`block text-[8px] font-mono font-black uppercase tracking-widest mb-1 ${meta.textClass}`}>
+                              {meta.label.split(" ")[0]}
+                            </span>
+                            <h5 className="text-[10px] font-bold leading-tight text-white line-clamp-2 font-heading">
+                              {m.title}
+                            </h5>
+                            <span className="block text-[8px] font-mono text-zinc-400 mt-1">
+                              {m.yearLabel}
+                            </span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Swimlanes dynamic columns grid */}
+          <div 
+            ref={containerRef} 
+            className="relative w-full min-h-[500px]"
+            onMouseLeave={() => !selectedMilestone && setHoveredMilestoneId(null)}
+          >
+            
+            {/* SVG Connecting bezier curves */}
+            <svg 
+              ref={svgRef}
+              className="absolute inset-0 w-full h-full pointer-events-none z-0 hidden lg:block"
+              style={{ mixBlendMode: "difference" }}
+            >
+              <defs>
+                <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="#0284c7" stopOpacity="0.2" />
+                </linearGradient>
+                <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#c084fc" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.2" />
+                </linearGradient>
+                <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#34d399" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.2" />
+                </linearGradient>
+                <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.8" />
+                  <stop offset="100%" stopColor="#d97706" stopOpacity="0.2" />
+                </linearGradient>
+              </defs>
+
+              {svgPaths.map((c, i) => (
+                <g key={i}>
+                  <motion.path
+                    d={c.path}
+                    fill="none"
+                    stroke={`url(#${c.color}Grad)`}
+                    strokeWidth="4"
+                    className="opacity-35"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.35 }}
+                  />
+                  <motion.path
+                    d={c.path}
+                    fill="none"
+                    stroke={c.color === "sky" ? "#0284c7" : c.color === "purple" ? "#8b5cf6" : c.color === "emerald" ? "#10b981" : "#d97706"}
+                    strokeWidth="1.5"
+                    strokeDasharray="4 2"
+                    className="opacity-90 animate-[dash_10s_linear_infinite]"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.35 }}
+                  />
+                </g>
+              ))}
+            </svg>
+
+            {/* Sticky Column Headers for Swimlanes (Desktop only) */}
+            <div className="hidden lg:grid grid-cols-4 gap-6 sticky top-16 bg-zinc-50/80 dark:bg-zinc-950/80 backdrop-blur-md py-3.5 border-b border-zinc-200/80 dark:border-zinc-900 z-20 mb-6 transition-colors duration-300 rounded-t-xl">
+              {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
+                const meta = TRACK_META[trackKey];
+                const Icon = meta.icon;
+                return (
+                  <div key={trackKey} className="flex items-center gap-2.5 px-3">
+                    <span className={`p-1.5 rounded-lg ${meta.bgClass} border ${meta.borderClass} flex items-center justify-center`}>
+                      <Icon className={`w-3.5 h-3.5 ${meta.textClass}`} />
+                    </span>
+                    <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 tracking-tight font-mono uppercase">
+                      {meta.label}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Desktop grid era by era */}
+            <div className="hidden lg:block space-y-16 relative z-10">
+              {ERAS.map((era) => {
+                const eraMilestones = filteredMilestones.filter(m => m.year >= era.minYear && m.year <= era.maxYear);
+                if (eraMilestones.length === 0 && searchQuery) return null;
+
+                return (
+                  <div key={era.id} className="space-y-6">
+                    <div className="flex items-center gap-4 border-b border-zinc-200/60 dark:border-zinc-900/60 pb-3">
+                      <div className="w-2.5 h-2.5 rounded-full bg-purple-500/70 animate-pulse" />
+                      <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-100 tracking-wider font-heading uppercase">
+                        {era.name}
+                      </h3>
+                      <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-600 bg-zinc-100 dark:bg-zinc-950 p-1 px-2.5 rounded-md border border-zinc-200/40 dark:border-zinc-900/40 ml-auto">
+                        {era.period}
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-4 gap-6 items-stretch">
+                      {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
+                        const trackMilestones = eraMilestones.filter(m => m.trackId === trackKey);
+                        
+                        return (
+                          <div 
+                            key={trackKey} 
+                            className="flex flex-col gap-4 min-h-[140px] p-2 rounded-2xl bg-zinc-50/20 dark:bg-zinc-950/5 border border-dashed border-zinc-200/40 dark:border-zinc-900/40 transition-colors hover:bg-zinc-100/10 dark:hover:bg-zinc-950/10"
+                          >
+                            {trackMilestones.map((milestone) => {
+                              const meta = TRACK_META[milestone.trackId];
+                              const isHovered = hoveredMilestoneId === milestone.id;
+                              const isSelected = selectedMilestone?.id === milestone.id;
+                              const isLinked = svgPaths.some(p => p.toId === milestone.id);
+                              const isExpanded = !!expandedMilestones[milestone.id];
+
+                              return (
+                                <div
+                                  key={milestone.id}
+                                  id={`milestone-card-${milestone.id}`}
+                                  onMouseEnter={() => {
+                                    setHoveredMilestoneId(milestone.id);
+                                    if (!selectedMilestone) {
+                                      setSelectedMilestone(milestone);
+                                    }
+                                  }}
+                                  onClick={() => {
+                                    setSelectedMilestone(milestone);
+                                    setHoveredMilestoneId(milestone.id);
+                                  }}
+                                  className={`p-4.5 rounded-xl transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-3 relative group select-none ${
+                                    isSelected || isHovered
+                                      ? "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 shadow-lg scale-[1.01]"
+                                      : isLinked
+                                      ? "bg-white/95 dark:bg-zinc-900/95 border-purple-400/60 dark:border-purple-900/50 shadow-sm scale-[0.99]"
+                                      : "bg-white/40 dark:bg-zinc-900/20 hover:bg-white/80 dark:hover:bg-zinc-900/50 border-zinc-200 dark:border-zinc-900/50 hover:border-zinc-300 dark:hover:border-zinc-800"
+                                  } border ${meta.glowClass}`}
+                                >
+                                  
+                                  <div className={`absolute top-0 left-0 right-0 h-1 rounded-t-xl bg-gradient-to-r ${
+                                    milestone.trackId === "usos" 
+                                      ? "from-sky-400 to-sky-600" 
+                                      : milestone.trackId === "etica" 
+                                      ? "from-purple-400 to-violet-650" 
+                                      : milestone.trackId === "regulaciones" 
+                                      ? "from-emerald-400 to-emerald-600" 
+                                      : "from-amber-400 to-amber-600"
+                                  }`} />
+
+                                  <div className="space-y-1">
+                                    <div className="flex items-center justify-between">
+                                      <span className={`text-[10px] font-black font-mono tracking-widest uppercase ${meta.textClass}`}>
+                                        {milestone.yearLabel}
+                                      </span>
+                                      {isLinked && (
+                                        <span className="p-0.5 px-1.5 rounded bg-purple-500/10 border border-purple-500/20 text-[8px] font-mono text-purple-600 dark:text-purple-400 font-bold uppercase animate-pulse">
+                                          VINCULADO
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h4 className="text-xs sm:text-sm font-black tracking-tight text-zinc-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-tight font-heading">
+                                      {milestone.title}
+                                    </h4>
+                                  </div>
+
+                                  <p className="text-[11px] font-light text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                                    {milestone.shortDesc}
+                                  </p>
+
+                                  {isExpanded && (
+                                    <motion.div 
+                                      initial={{ opacity: 0, height: 0 }}
+                                      animate={{ opacity: 1, height: "auto" }}
+                                      exit={{ opacity: 0, height: 0 }}
+                                      className="space-y-4 pt-3 border-t border-zinc-100 dark:border-zinc-900 text-[11px] leading-relaxed select-text"
+                                    >
+                                      {/* Rich Text with Tooltip Citations */}
+                                      <div className="text-zinc-650 dark:text-zinc-350 font-light leading-relaxed whitespace-pre-line bg-zinc-50/50 dark:bg-zinc-950/20 p-2.5 rounded-lg border border-zinc-200/30 dark:border-zinc-900/30 font-sans">
+                                        {renderTextWithReferences(milestone.longDesc, milestone.references)}
+                                      </div>
+
+                                      {/* Evidence list with tooltips too */}
+                                      <div className="space-y-2">
+                                        <span className="text-[9px] font-bold tracking-wider text-zinc-450 uppercase block font-mono">
+                                          EVIDENCIAS Y HECHOS DECONSTRUIDOS:
+                                        </span>
+                                        <ul className="space-y-2 list-none pl-0">
+                                          {milestone.scientificFacts.map((fact, index) => (
+                                            <li key={index} className="flex gap-2 p-2.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800/40 bg-white/30 dark:bg-zinc-950/10 font-light font-sans text-zinc-600 dark:text-zinc-400">
+                                              <span className="text-purple-500 font-mono font-bold select-none">[{index + 1}]</span>
+                                              <span>{renderTextWithReferences(fact, milestone.references)}</span>
+                                            </li>
+                                          ))}
+                                        </ul>
+                                      </div>
+
+                                      {/* Causal links */}
+                                      {(() => {
+                                        const { causes, effects } = getCausality(milestone.id);
+                                        if (causes.length === 0 && effects.length === 0) return null;
+                                        return (
+                                          <div className="space-y-2 pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                            <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block font-mono">
+                                              RELACIONES DE CAUSALIDAD HISTÓRICA:
+                                            </span>
+                                            {causes.map(c => (
+                                              <div 
+                                                key={c.id} 
+                                                onClick={(e) => { e.stopPropagation(); focusMilestone(c.id); }}
+                                                className="flex items-center justify-between p-2 rounded bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-300 group/link transition-all font-mono"
+                                              >
+                                                <span className="flex items-center gap-1">
+                                                  <ArrowLeft className="w-3 h-3 group-hover/link:-translate-x-0.5 transition-transform" />
+                                                  Causa: {c.yearLabel}
+                                                </span>
+                                                <span className="font-bold truncate max-w-[150px]">{c.title}</span>
+                                              </div>
+                                            ))}
+                                            {effects.map(ef => (
+                                              <div 
+                                                key={ef.id} 
+                                                onClick={(e) => { e.stopPropagation(); focusMilestone(ef.id); }}
+                                                className="flex items-center justify-between p-2 rounded bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-300 group/link transition-all font-mono"
+                                              >
+                                                <span className="flex items-center gap-1">
+                                                  Efecto: {ef.yearLabel}
+                                                  <ArrowRight className="w-3 h-3 group-hover/link:translate-x-0.5 transition-transform" />
+                                                </span>
+                                                <span className="font-bold truncate max-w-[150px]">{ef.title}</span>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        );
+                                      })()}
+
+                                      {/* Academic Bibliographies toggle */}
+                                      {milestone.references && milestone.references.length > 0 && (
+                                        <div className="space-y-1.5 pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                          <div className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-zinc-400 uppercase font-mono">
+                                            <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
+                                            <span>BIBLIOGRAFÍA APA</span>
+                                          </div>
+                                          <div className="space-y-1 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg border border-zinc-200/50 dark:border-zinc-900/50">
+                                            {milestone.references.map((ref) => (
+                                              <div key={ref.id} className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-normal flex gap-1 items-start">
+                                                <span className="text-purple-500 font-bold font-mono">[{ref.id}]</span>
+                                                <div className="flex-1 font-sans leading-tight select-text">
+                                                  {ref.citation}
+                                                  {ref.url && (
+                                                    <a 
+                                                      href={ref.url} 
+                                                      target="_blank" 
+                                                      rel="noopener noreferrer" 
+                                                      className="inline-flex items-center gap-0.5 text-purple-600 dark:text-purple-400 hover:underline ml-1 font-bold font-mono text-[9px]"
+                                                    >
+                                                      Fuente <ExternalLink className="w-2.5 h-2.5" />
+                                                    </a>
+                                                  )}
+                                                </div>
+                                              </div>
+                                            ))}
+                                          </div>
+                                        </div>
+                                      )}
+
+                                      {/* Concept Explorer Redirect in parallel card */}
+                                      {milestone.relatedNodeId && onRedirectToConcept && (
+                                        <div className="pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                          <button
+                                            onClick={(e) => { e.stopPropagation(); onRedirectToConcept(milestone.relatedNodeId!); }}
+                                            className="w-full flex items-center justify-between text-[10px] p-2 rounded bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-950 dark:hover:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-400 font-bold transition-all"
+                                          >
+                                            <span>Explorar Concepto Sintiens Asociado</span>
+                                            <ArrowRight className="w-3 h-3 text-zinc-450" />
+                                          </button>
+                                        </div>
+                                      )}
+
+                                    </motion.div>
+                                  )}
+
+                                  <div 
+                                    onClick={(e) => { e.stopPropagation(); toggleExpand(milestone.id); }}
+                                    className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-900 text-[10px] font-mono text-zinc-400 dark:text-zinc-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                  >
+                                    <span>
+                                      {isExpanded ? "Ocultar deconstrucción" : "Deconstruir evidencias"}
+                                    </span>
+                                    <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Mobile Swimlanes representation (Merged Chronological) */}
+            <div className="lg:hidden space-y-6">
+              <div className="sticky top-16 bg-zinc-50/80 dark:bg-zinc-950/80 backdrop-blur-md py-3 border-b border-zinc-200/50 dark:border-zinc-900/50 z-20 flex gap-2 overflow-x-auto pr-4 custom-scrollbar">
+                <button
+                  onClick={() => setMobileActiveTrack("todos")}
+                  className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all cursor-pointer ${
+                    mobileActiveTrack === "todos"
+                      ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-950"
+                      : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-900 text-zinc-505 dark:text-zinc-400"
+                  }`}
+                >
+                  Todos
+                </button>
+                {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
+                  const meta = TRACK_META[trackKey];
+                  return (
+                    <button
+                      key={trackKey}
+                      onClick={() => setMobileActiveTrack(trackKey)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer border ${
+                        mobileActiveTrack === trackKey ? "bg-purple-500 text-white border-purple-500" : "bg-white dark:bg-zinc-900 border-zinc-250 dark:border-zinc-900 text-zinc-550 dark:text-zinc-400"
+                      }`}
+                    >
+                      <meta.icon className="w-3.5 h-3.5" />
+                      {meta.label.split(" ")[0]}
+                    </button>
+                  );
+                })}
+              </div>
+
+              {(() => {
+                const mobileFilteredMilestones = filteredMilestones.filter(m => 
+                  mobileActiveTrack === "todos" || m.trackId === mobileActiveTrack
+                );
+
+                if (mobileFilteredMilestones.length === 0) {
+                  return (
+                    <div className="py-16 text-center space-y-3">
+                      <HelpCircle className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
+                      <p className="text-zinc-400 dark:text-zinc-650 text-xs font-mono">
+                        No se encontraron hitos para los filtros seleccionados
+                      </p>
+                    </div>
+                  );
+                }
+
+                return (
+                  <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 pl-5 space-y-6">
+                    {mobileFilteredMilestones.map((milestone) => {
+                      const meta = TRACK_META[milestone.trackId];
+                      const isExpanded = !!expandedMilestones[milestone.id];
+
+                      return (
+                        <div key={milestone.id} className="relative">
+                          <div className={`absolute -left-[27px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-zinc-950 ${
+                            milestone.trackId === "usos" ? "bg-sky-500" :
+                            milestone.trackId === "etica" ? "bg-purple-500" :
+                            milestone.trackId === "regulaciones" ? "bg-emerald-500" : "bg-amber-500"
+                          }`} />
+
+                          <div className={`p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-850 space-y-3 ${meta.glowClass}`}>
+                            <div className="flex items-center justify-between">
+                              <span className={`text-[10px] font-black font-mono tracking-widest uppercase ${meta.textClass}`}>
+                                {milestone.yearLabel}
+                              </span>
+                              <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500">
+                                {meta.label.split(" ")[0]}
+                              </span>
+                            </div>
+
+                            <h4 className="text-sm font-black tracking-tight text-zinc-900 dark:text-white leading-tight font-heading">
+                              {milestone.title}
+                            </h4>
+
+                            <p className="text-[11px] font-light text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                              {milestone.shortDesc}
+                            </p>
+
+                            {isExpanded && (
+                              <motion.div 
+                                initial={{ opacity: 0, height: 0 }}
+                                animate={{ opacity: 1, height: "auto" }}
+                                exit={{ opacity: 0, height: 0 }}
+                                className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-850 text-[11px] leading-relaxed select-text"
+                              >
+                                <div className="text-zinc-650 dark:text-zinc-350 font-light leading-relaxed bg-zinc-50/50 dark:bg-zinc-950/20 p-2.5 rounded-lg border border-zinc-200/30 dark:border-zinc-800/30 font-sans">
+                                  {renderTextWithReferences(milestone.longDesc, milestone.references)}
+                                </div>
+
+                                <div className="space-y-2">
+                                  <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block font-mono">
+                                    EVIDENCIAS DECONSTRUIDAS:
+                                  </span>
+                                  <ul className="space-y-1.5 list-none pl-0">
+                                    {milestone.scientificFacts.map((fact, index) => (
+                                      <li key={index} className="flex gap-1.5 text-zinc-500 dark:text-zinc-400 font-light font-sans">
+                                        <span className="text-purple-500 font-mono text-[9px] mt-0.5">●</span>
+                                        <span>{renderTextWithReferences(fact, milestone.references)}</span>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                </div>
+
+                                {(() => {
+                                  const { causes, effects } = getCausality(milestone.id);
+                                  if (causes.length === 0 && effects.length === 0) return null;
+                                  return (
+                                    <div className="space-y-2 pt-1.5 border-t border-zinc-100/50 dark:border-zinc-850 font-mono">
+                                      <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block">
+                                        VÍNCULOS CAUSALES:
+                                      </span>
+                                      {causes.map(c => (
+                                        <div 
+                                          key={c.id} 
+                                          onClick={() => focusMilestone(c.id)}
+                                          className="flex items-center justify-between p-1.5 rounded bg-amber-500/5 border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400"
+                                        >
+                                          <span>← Causa: {c.yearLabel}</span>
+                                          <span className="font-bold truncate max-w-[140px]">{c.title}</span>
+                                        </div>
+                                      ))}
+                                      {effects.map(ef => (
+                                        <div 
+                                          key={ef.id} 
+                                          onClick={() => focusMilestone(ef.id)}
+                                          className="flex items-center justify-between p-1.5 rounded bg-emerald-500/5 border border-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400"
+                                        >
+                                          <span>Efecto: {ef.yearLabel} →</span>
+                                          <span className="font-bold truncate max-w-[140px]">{ef.title}</span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  );
+                                })()}
+
+                                {milestone.references && milestone.references.length > 0 && (
+                                  <div className="space-y-1.5 pt-1.5 border-t border-zinc-100/50 dark:border-zinc-850">
+                                    <div className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-zinc-400 uppercase font-mono">
+                                      <BookOpen className="w-3.5 h-3.5 text-zinc-450" />
+                                      <span>REFERENCIAS APA</span>
+                                    </div>
+                                    <div className="space-y-1 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg border border-zinc-200/50 dark:border-zinc-850">
+                                      {milestone.references.map((ref) => (
+                                        <div key={ref.id} className="text-[10px] text-zinc-505 dark:text-zinc-500 leading-normal flex gap-1 items-start">
+                                          <span className="text-purple-500 font-bold font-mono">[{ref.id}]</span>
+                                          <div className="flex-1 font-sans leading-tight">
+                                            {ref.citation}
+                                          </div>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </div>
+                                )}
+                              </motion.div>
+                            )}
+
+                            <div 
+                              onClick={() => toggleExpand(milestone.id)}
+                              className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-850 text-[10px] font-mono text-zinc-400 dark:text-zinc-500"
+                            >
+                              <span>
+                                {isExpanded ? "Ocultar deconstrucción" : "Deconstruir evidencias"}
+                              </span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
+            </div>
+
+          </div>
+        </div>
+      )}
+
+      {/* ========================================== */}
+      {/* 2. DETAILED EXPLORER LAYOUT (Original View) */}
+      {/* ========================================== */}
+      {layoutView === "detallado" && (
+        <div className="space-y-6 w-full animate-fade-in">
+          
+          {/* Timeline filter navigation bar */}
+          {!isCompareMode && (
+            <div className="flex flex-wrap bg-zinc-150 dark:bg-zinc-900/60 p-1 rounded-2xl border border-zinc-200 dark:border-zinc-900/60 transition-all shadow-inner w-full lg:w-auto overflow-x-auto custom-scrollbar">
+              {TIMELINE_DATA.map((t) => {
+                const isActive = activeTimelineId === t.id;
+                const tColor = getTimelineColorClasses(t.id);
+                return (
+                  <button
+                    key={t.id}
+                    onClick={() => setActiveTimelineId(t.id)}
+                    className={`flex items-center gap-2 px-3.5 py-2.5 rounded-xl text-xs font-semibold tracking-tight transition-all duration-300 cursor-pointer shrink-0 ${
+                      isActive
+                        ? `bg-white dark:bg-zinc-800 ${tColor.text} shadow-sm border border-zinc-200/80 dark:border-transparent scale-102`
+                        : "text-zinc-500 dark:text-zinc-450 hover:text-zinc-800 dark:hover:text-white"
+                    }`}
+                  >
+                    {getTimelineIcon(t.id)}
+                    <span>{t.title}</span>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          {/* Original Split detailed view layout */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[620px] border border-zinc-200 dark:border-zinc-850 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300">
+            
+            {/* Timeline scroll vertical feed */}
+            <div className="lg:col-span-7 p-6 bg-zinc-50/50 dark:bg-zinc-950/30 relative min-h-[480px] lg:min-h-[580px] transition-colors duration-300 flex flex-col justify-between space-y-6">
+              <div className="space-y-4 flex-1">
+                <div className="flex-1 space-y-1">
+                  <h3 className="text-sm font-extrabold text-zinc-900 dark:text-white tracking-tight uppercase font-mono">
+                    {isCompareMode ? "🔍 SELECCIONA DOS HITOS PARA COMPARAR" : activeGroup.title}
+                  </h3>
+                  <p className="text-[11px] leading-relaxed text-zinc-550 dark:text-zinc-500 font-light select-text">
+                    {isCompareMode 
+                      ? "Haz clic en dos hitos cualesquiera de la lista (incluso cambiando de pestaña) para proyectar su inercia temporal." 
+                      : activeGroup.description
+                    }
+                  </p>
+                </div>
+
+                {isCompareMode && (
+                  <div className="grid grid-cols-2 gap-4 p-3 bg-zinc-150/40 dark:bg-zinc-950/40 rounded-2xl border border-zinc-200 dark:border-zinc-850 animate-pulse">
+                    <div className="text-left space-y-1">
+                      <span className="text-[9px] font-mono tracking-widest text-zinc-450 block uppercase">HITO A</span>
+                      {compareA ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="p-1 px-1.5 rounded bg-cyan-500/10 border border-cyan-500/30 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 font-bold select-none">{compareA.yearLabel}</span>
+                          <span className="text-xs font-bold text-zinc-850 dark:text-zinc-200 truncate">{compareA.title}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-light text-zinc-450 italic">Selecciona un hito...</span>
+                      )}
+                    </div>
+                    <div className="text-left space-y-1 border-l border-zinc-200 dark:border-zinc-800 pl-4">
+                      <span className="text-[9px] font-mono tracking-widest text-zinc-450 block uppercase">HITO B</span>
+                      {compareB ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="p-1 px-1.5 rounded bg-purple-500/10 border border-purple-500/30 text-[9px] font-mono text-purple-600 dark:text-purple-400 font-bold select-none">{compareB.yearLabel}</span>
+                          <span className="text-xs font-bold text-zinc-850 dark:text-zinc-200 truncate">{compareB.title}</span>
+                        </div>
+                      ) : (
+                        <span className="text-xs font-light text-zinc-450 italic">Selecciona otro hito...</span>
+                      )}
+                    </div>
+                  </div>
+                )}
+
+                <div className="relative pl-6 lg:pl-8 border-l border-zinc-300 dark:border-zinc-850 space-y-6 max-h-[440px] lg:max-h-[460px] overflow-y-auto pr-1.5 custom-scrollbar py-2">
+                  {filteredMilestones.length === 0 ? (
+                    <div className="py-16 text-center space-y-3 -ml-6 lg:-ml-8">
+                      <Clock className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
+                      <div className="space-y-1">
+                        <h4 className="text-sm font-semibold text-zinc-900 dark:text-white">Sin correspondencias</h4>
+                        <p className="text-xs text-zinc-505">Ningún hito coincide con el término de búsqueda.</p>
                       </div>
                     </div>
                   ) : (
-                    <div className="flex flex-col items-center justify-center text-center py-20 text-zinc-500">
-                      <GitCompare className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-3 animate-pulse" />
-                      <p className="text-xs font-light max-w-xs">
-                        Selecciona un hito de la lista de la izquierda (A) y luego otro diferente (B) para calibrar el retardo histórico.
-                      </p>
-                    </div>
+                    filteredMilestones.map((m) => {
+                      const isSelected = selectedMilestone?.id === m.id;
+                      const isComparingA = compareA?.id === m.id;
+                      const isComparingB = compareB?.id === m.id;
+                      
+                      let borderClass = "border-zinc-200 dark:border-zinc-800 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-zinc-100/30 dark:hover:bg-zinc-900/10";
+                      let bgGlow = "";
+                      
+                      if (isCompareMode) {
+                        if (isComparingA) {
+                          borderClass = "border-cyan-500 ring-1 ring-cyan-500/25";
+                          bgGlow = "bg-cyan-500/5";
+                        } else if (isComparingB) {
+                          borderClass = "border-purple-500 ring-1 ring-purple-500/25";
+                          bgGlow = "bg-purple-500/5";
+                        }
+                      } else if (isSelected) {
+                        borderClass = activeTimelineId === "usos" ? "border-sky-500 ring-1 ring-sky-500/25" :
+                                      activeTimelineId === "etica" ? "border-purple-500 ring-1 ring-purple-500/25" :
+                                      activeTimelineId === "regulaciones" ? "border-emerald-500 ring-1 ring-emerald-500/25" :
+                                      "border-amber-500 ring-1 ring-amber-500/25";
+                        bgGlow = colors.bg;
+                      }
+
+                      return (
+                        <motion.div
+                          key={m.id}
+                          onClick={() => handleSelectMilestone(m)}
+                          className={`group p-4.5 rounded-2xl border text-left cursor-pointer transition-all duration-300 relative overflow-hidden bg-white/40 dark:bg-zinc-950/15 ${borderClass} ${bgGlow} ${
+                            (isSelected || isComparingA || isComparingB) ? "shadow-md scale-[1.01]" : "hover:-translate-y-0.5"
+                          }`}
+                        >
+                          <div className="absolute -left-[31px] lg:-left-[39px] top-[26px] z-10 flex h-4 w-4 relative items-center justify-center">
+                            <span className={`absolute inline-flex rounded-full h-2.5 w-2.5 transition-transform group-hover:scale-125 ${
+                              (isSelected || isComparingA || isComparingB) ? colors.glow : "bg-zinc-300 dark:bg-zinc-700"
+                            }`} />
+                            {(isSelected || isComparingA || isComparingB) && (
+                              <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-40 ${colors.glow}`} />
+                            )}
+                          </div>
+
+                          <div className="flex items-center justify-between gap-3 mb-2">
+                            <span className={`text-[9px] font-mono tracking-wider px-2 py-0.5 rounded-md font-bold ${
+                              isComparingA ? "bg-cyan-500/10 text-cyan-600 dark:text-cyan-400 border border-cyan-500/30" :
+                              isComparingB ? "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/30" :
+                              colors.badge
+                            }`}>
+                              {m.yearLabel}
+                            </span>
+                            {isCompareMode && (
+                              <span className="text-[8px] font-mono font-bold uppercase tracking-wider text-zinc-450">
+                                {isComparingA && <span className="text-cyan-500">Seleccionado A</span>}
+                                {isComparingB && <span className="text-purple-500">Seleccionado B</span>}
+                                {!isComparingA && !isComparingB && <span>Comparar +</span>}
+                              </span>
+                            )}
+                          </div>
+
+                          <h4 className="text-xs sm:text-sm font-extrabold text-zinc-900 dark:text-white tracking-tight leading-snug group-hover:text-black dark:group-hover:text-white transition-colors mb-1 font-heading">
+                            {m.title}
+                          </h4>
+
+                          <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400 font-light line-clamp-2">
+                            {m.shortDesc}
+                          </p>
+
+                          <div className="mt-3 pt-3 border-t border-zinc-200/50 dark:border-zinc-800/40 flex justify-between items-center text-[9px] font-mono text-zinc-450">
+                            <span>Evidencias: {m.scientificFacts.length}</span>
+                            <span className={`font-bold ${
+                              isComparingA ? "text-cyan-400 hover:underline" :
+                              isComparingB ? "text-purple-400 hover:underline" :
+                              "text-zinc-650 dark:text-zinc-350 hover:underline"
+                            }`}>
+                              {isCompareMode ? "Vincular a Comparativa →" : "Detalles Académicos →"}
+                            </span>
+                          </div>
+
+                        </motion.div>
+                      );
+                    })
                   )}
                 </div>
+              </div>
+            </div>
 
-                {compareA && compareB && (
-                  <button
-                    onClick={() => {
-                      setCompareA(null);
-                      setCompareB(null);
-                    }}
-                    className="w-full mt-6 py-2 px-4 bg-zinc-200/50 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800/80 rounded-xl border border-zinc-300/40 dark:border-zinc-800 text-[10px] font-mono tracking-wider font-bold uppercase text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-all cursor-pointer select-none"
+            {/* Split detailed sidepanel view */}
+            <div className="lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-850 p-6 lg:p-8 flex flex-col justify-between bg-zinc-50/20 dark:bg-zinc-900/25 transition-colors duration-300 sticky top-24 self-start max-h-[85vh] overflow-y-auto custom-scrollbar">
+              <AnimatePresence mode="wait">
+                
+                {isCompareMode ? (
+                  <motion.div
+                    key="compare-dash"
+                    initial={{ opacity: 0, x: 15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -15 }}
+                    className="space-y-6 h-full flex flex-col justify-between"
                   >
-                    Resetear Hitos de Comparación
-                  </button>
-                )}
-              </motion.div>
-            ) : (
-              
-              /* STANDARD MILESTONE DETAIL PANEL */
-              <motion.div
-                key={selectedMilestone ? selectedMilestone.id : "empty-detail"}
-                initial={{ opacity: 0, x: 15 }}
-                animate={{ opacity: 1, x: 0 }}
-                exit={{ opacity: 0, x: -15 }}
-                transition={{ duration: 0.2 }}
-                className="h-full flex flex-col justify-between"
-              >
-                {selectedMilestone ? (
-                  renderDetailsContent(selectedMilestone)
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-1.5">
+                        <span className="p-1 rounded bg-cyan-500/10 border border-cyan-500/20 text-[9px] font-mono text-cyan-600 dark:text-cyan-400 font-bold">ANÁLISIS</span>
+                        <h4 className="text-xs font-mono font-bold uppercase tracking-wider text-zinc-400">DESFASE ÉTICO-INDUSTRIAL</h4>
+                      </div>
+
+                      <p className="text-xs text-zinc-500 font-light leading-relaxed">
+                        Proyecta la inercia temporal entre las etapas de opresión fáctica de los animales y el desarrollo moral/científico de la sintiencia.
+                      </p>
+
+                      {compareA && compareB ? (
+                        <div className="space-y-6 pt-2">
+                          {getComparisonYearScale(compareA, compareB)}
+
+                          <div className="bg-white dark:bg-zinc-950/60 p-4.5 rounded-2xl border border-zinc-200 dark:border-zinc-850 space-y-3 shadow-xs">
+                            <div className="flex items-start gap-1.5">
+                              <Sparkles className="w-4 h-4 text-amber-500 mt-0.5 shrink-0 animate-pulse" />
+                              <h5 className="text-xs font-bold text-zinc-900 dark:text-white leading-snug font-heading">
+                                {getLagAnalysis(compareA, compareB).title}
+                              </h5>
+                            </div>
+                            <p className="text-xs leading-relaxed text-zinc-650 dark:text-zinc-400 font-light select-text font-sans">
+                              {getLagAnalysis(compareA, compareB).desc}
+                            </p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center text-center py-20 text-zinc-500">
+                          <GitCompare className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-3 animate-pulse" />
+                          <p className="text-xs font-light max-w-xs leading-relaxed">
+                            Haz clic en dos hitos de la lista de la izquierda para calibrar el retardo histórico y el desfase de empatía.
+                          </p>
+                        </div>
+                      )}
+                    </div>
+
+                    {compareA && compareB && (
+                      <button
+                        onClick={() => {
+                          setCompareA(null);
+                          setCompareB(null);
+                        }}
+                        className="w-full mt-6 py-2 px-4 bg-zinc-200/50 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-[10px] font-mono tracking-wider font-bold uppercase text-zinc-500 hover:text-zinc-850 transition-all cursor-pointer"
+                      >
+                        Resetear Comparador
+                      </button>
+                    )}
+                  </motion.div>
                 ) : (
-                  <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 py-20 lg:py-28">
-                    <Clock className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-2 animate-pulse" />
-                    <p className="text-xs font-light max-w-[240px]">
-                      Selecciona un hito cronológico para profundizar en su análisis de evidencias e implicaciones civilizatorias.
-                    </p>
-                  </div>
+                  <motion.div
+                    key={selectedMilestone ? selectedMilestone.id : "empty-det"}
+                    initial={{ opacity: 0, x: 15 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -15 }}
+                    className="h-full flex flex-col justify-between"
+                  >
+                    {selectedMilestone ? (
+                      renderDetailsContent(selectedMilestone)
+                    ) : (
+                      <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 py-24">
+                        <Clock className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-2 animate-pulse" />
+                        <p className="text-xs font-light max-w-[220px]">
+                          Selecciona un hito de la lista para deconstruir sus evidencias e implicaciones morales.
+                        </p>
+                      </div>
+                    )}
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
 
-          </AnimatePresence>
+              </AnimatePresence>
+            </div>
+
+          </div>
+
         </div>
+      )}
 
-      </div>
-
-      {/* Mobile Drawer/Modal Overlay for Details (Screens < 1024px) */}
+      {/* Mobile Drawer Detail Overlay (detallado mode) */}
       <AnimatePresence>
-        {isMobileDetailOpen && selectedMilestone && !isCompareMode && (
-          <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center select-none pointer-events-auto">
-            {/* Dark glass backdrop overlay */}
+        {isMobileDetailOpen && selectedMilestone && layoutView === "detallado" && !isCompareMode && (
+          <div className="lg:hidden fixed inset-0 z-50 flex items-end justify-center pointer-events-auto">
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               onClick={() => setIsMobileDetailOpen(false)}
-              className="absolute inset-0 bg-black/60 dark:bg-black/85 backdrop-blur-xs cursor-pointer pointer-events-auto"
+              className="absolute inset-0 bg-black/60 dark:bg-black/85 backdrop-blur-xs cursor-pointer"
             />
-            {/* Sheet drawer content container */}
             <motion.div
               initial={{ y: "100%", borderTopLeftRadius: 30, borderTopRightRadius: 30 }}
               animate={{ y: 0 }}
               exit={{ y: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 220 }}
-              className="relative w-full max-h-[85vh] overflow-y-auto bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 p-6 sm:p-8 flex flex-col z-10 pointer-events-auto shadow-2xl rounded-t-3xl custom-scrollbar"
+              className="relative w-full max-h-[85vh] overflow-y-auto bg-zinc-50 dark:bg-zinc-950 border-t border-zinc-200 dark:border-zinc-800 p-6 flex flex-col z-10 shadow-2xl rounded-t-3xl custom-scrollbar"
             >
-              {/* Drag bar indicator */}
               <div className="w-12 h-1 rounded-full bg-zinc-300 dark:bg-zinc-800 mx-auto mb-5 shrink-0" />
-
-              {/* Close Button absolute positioning */}
               <button
                 onClick={() => setIsMobileDetailOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-full bg-zinc-200/50 dark:bg-zinc-900/60 border border-zinc-300/40 dark:border-zinc-800 hover:bg-zinc-300/70 dark:hover:bg-zinc-800/80 text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-all cursor-pointer"
+                className="absolute top-5 right-5 p-2 rounded-full bg-zinc-200/50 dark:bg-zinc-900/60 border border-zinc-300/40 dark:border-zinc-800 hover:bg-zinc-300/70 dark:hover:bg-zinc-800/80 text-zinc-500 hover:text-zinc-950 transition-all cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>
-
               <div className="select-text overflow-y-auto pb-8">
                 {renderDetailsContent(selectedMilestone)}
               </div>

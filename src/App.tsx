@@ -23,7 +23,6 @@ import TimelineExplorer from "./components/TimelineExplorer";
 import ExcusesDilemmas from "./components/ExcusesDilemmas";
 import ImpactCalculator from "./components/ImpactCalculator";
 import AiValidator from "./components/AiValidator";
-import HistoryTimeline from "./components/HistoryTimeline";
 import { motion, AnimatePresence } from "motion/react";
 
 type TabType = "grafo" | "cronologia" | "dialectica" | "calculadora" | "validador";
@@ -201,7 +200,7 @@ export default function App() {
                 transition={{ duration: 0.25 }}
                 className="w-full"
               >
-                <HistoryTimeline />
+                <TimelineExplorer onRedirectToConcept={handleRedirectToConcept} />
               </motion.div>
             )}
 
