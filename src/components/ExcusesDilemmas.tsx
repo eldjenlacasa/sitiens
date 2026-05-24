@@ -100,7 +100,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                 className={`text-[10.5px] px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer capitalize font-sans ${
                   selectedCategory === cat
                     ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 border-zinc-900 dark:border-white font-semibold"
-                    : "bg-white dark:bg-zinc-950 text-zinc-650 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-sm dark:shadow-none"
+                    : "bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-400 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-sm dark:shadow-none"
                 }`}
               >
                 {cat === "all" ? "Todos" : cat}
@@ -120,7 +120,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                 className={`text-[10px] px-2.5 py-1.5 rounded-xl border transition-all cursor-pointer uppercase ${
                   selectedConsensus === con
                     ? "bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-950 border-zinc-900 dark:border-zinc-100 font-bold"
-                    : "bg-white dark:bg-zinc-950 text-zinc-650 dark:text-zinc-550 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-350 shadow-sm dark:shadow-none"
+                    : "bg-white dark:bg-zinc-950 text-zinc-600 dark:text-zinc-500 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-400 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-zinc-300 shadow-sm dark:shadow-none"
                 }`}
               >
                 {con === "all" ? "Todos" : con.replace("_", " ")}
@@ -133,7 +133,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
 
       {/* Grid representation */}
       {filteredDilemmas.length === 0 ? (
-        <div className="bg-white/40 dark:bg-zinc-900/10 border border-zinc-200 dark:border-zinc-850 p-12 rounded-3xl text-center space-y-3 shadow-sm dark:shadow-none transition-all duration-300">
+        <div className="bg-white/40 dark:bg-zinc-900/10 border border-zinc-200 dark:border-zinc-800 p-12 rounded-3xl text-center space-y-3 shadow-sm dark:shadow-none transition-all duration-300">
           <HelpCircle className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto" />
           <div className="space-y-1">
             <h4 className="text-sm font-semibold text-zinc-900 dark:text-white tracking-tight border-none">Sin correspondencias</h4>
@@ -152,7 +152,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                 className={`group border rounded-3xl p-5 lg:p-6 cursor-pointer select-none transition-all duration-200 ${
                   expandedId === dilemma.id 
                     ? "bg-white dark:bg-zinc-900/30 border-zinc-300 dark:border-zinc-700/80 shadow-md translate-y-[-1px]" 
-                    : "bg-white/40 dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-750 hover:bg-white dark:hover:bg-zinc-950/40 shadow-sm dark:shadow-none"
+                    : "bg-white/40 dark:bg-zinc-950/20 border-zinc-200 dark:border-zinc-800/80 hover:border-zinc-300 dark:hover:border-zinc-700 hover:bg-white dark:hover:bg-zinc-950/40 shadow-sm dark:shadow-none"
                 }`}
               >
                 <div className="flex items-center justify-between gap-4 mb-3">
@@ -171,8 +171,8 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                   <h3 className="text-sm lg:text-base font-bold text-zinc-900 dark:text-white tracking-tight leading-snug transition-colors">
                     {dilemma.title}
                   </h3>
-                  <ChevronRight className={`w-5 h-5 text-zinc-400 dark:text-zinc-650 shrink-0 transform transition-transform ${
-                    expandedId === dilemma.id ? "rotate-90 text-zinc-850 dark:text-white" : ""
+                  <ChevronRight className={`w-5 h-5 text-zinc-400 dark:text-zinc-600 shrink-0 transform transition-transform ${
+                    expandedId === dilemma.id ? "rotate-90 text-zinc-800 dark:text-white" : ""
                   }`} />
                 </div>
 
@@ -188,7 +188,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                         e.stopPropagation();
                         onAnalyzeTrigger(dilemma.popularStatement);
                       }}
-                      className="text-[11px] font-semibold text-zinc-950 dark:text-zinc-950 bg-zinc-100 dark:bg-white hover:bg-zinc-200 dark:hover:bg-zinc-100 rounded-xl px-4 py-2 flex items-center gap-1.5 transition-all shadow-sm border border-zinc-250 dark:border-transparent cursor-pointer"
+                      className="text-[11px] font-semibold text-zinc-950 dark:text-zinc-950 bg-zinc-100 dark:bg-white hover:bg-zinc-200 dark:hover:bg-zinc-100 rounded-xl px-4 py-2 flex items-center gap-1.5 transition-all shadow-sm border border-zinc-300 dark:border-transparent cursor-pointer"
                     >
                       <Sparkles className="w-3.5 h-3.5 text-zinc-800" />
                       Deconstruir con IA de Sitiens
@@ -228,8 +228,8 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
 
                         {/* Popular justification placeholder */}
                         <div className="bg-zinc-100 dark:bg-zinc-950 p-4 border border-zinc-200 dark:border-zinc-900 rounded-2xl relative overflow-hidden transition-colors">
-                          <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-650 uppercase tracking-wider block mb-1">Premisa Popular Escuchada</span>
-                          <blockquote className="text-zinc-700 dark:text-zinc-350 text-xs font-serif italic leading-relaxed transition-colors">
+                          <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-600 uppercase tracking-wider block mb-1">Premisa Popular Escuchada</span>
+                          <blockquote className="text-zinc-700 dark:text-zinc-300 text-xs font-serif italic leading-relaxed transition-colors">
                             &ldquo;{current.popularStatement}&rdquo;
                           </blockquote>
                         </div>
@@ -269,7 +269,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
 
                         {current.citation && (
                           <div className="p-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono text-zinc-500 dark:text-zinc-500 leading-relaxed transition-colors">
-                            <span className="text-[8px] uppercase tracking-widest text-zinc-650 block mb-1 font-bold">
+                            <span className="text-[8px] uppercase tracking-widest text-zinc-600 block mb-1 font-bold">
                               Fuente / Referencia Académica:
                             </span>
                             📖 {current.citation}
@@ -285,7 +285,7 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
                 <div className="flex flex-col items-center justify-center text-center h-full text-zinc-400 dark:text-zinc-500 my-16 space-y-3">
                   <Compass className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 animate-spin-slow" />
                   <div className="space-y-1">
-                    <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-450">Tesis No Descolgada</h3>
+                    <h3 className="text-sm font-semibold text-zinc-600 dark:text-zinc-500">Tesis No Descolgada</h3>
                     <p className="text-xs text-zinc-500 font-light max-w-xs mx-auto">Selecciona cualquiera de las premisas dialécticas de la izquierda para desglosar su precisión científica y refutación filosófica.</p>
                   </div>
                 </div>

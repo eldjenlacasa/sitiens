@@ -51,12 +51,12 @@ export default function ImpactCalculator() {
             Las decisiones dietéticas individuales se agregan mecánicamente en la demanda agregada industrial. Utiliza este cuantificador interactivo para ver los m3 de agua limpia consumidos, los kg de CO2 térmico inyectados, la superficie forestal destruida y el cereal desperdiciado para nutrir tus hábitos semanales.
           </p>
         </div>
-        <div className="md:col-span-4 flex flex-col justify-center items-end bg-zinc-100/70 dark:bg-zinc-900/60 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-850/80">
+        <div className="md:col-span-4 flex flex-col justify-center items-end bg-zinc-100/70 dark:bg-zinc-900/60 p-4 rounded-2xl border border-zinc-200 dark:border-zinc-800/80">
           <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-widest block mb-1">Tu Hábito Semanal de Consumo:</span>
           <div className="flex items-center gap-4">
             <button
               onClick={() => setWeeklyMeals((v) => Math.max(0, v - 1))}
-              className="p-2 bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-350 dark:border-zinc-800 rounded-xl rounded-l-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-all cursor-pointer shadow-sm dark:shadow-none"
+              className="p-2 bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-400 dark:border-zinc-800 rounded-xl rounded-l-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-all cursor-pointer shadow-sm dark:shadow-none"
             >
               <Minus className="w-4 h-4" />
             </button>
@@ -65,12 +65,12 @@ export default function ImpactCalculator() {
             </span>
             <button
               onClick={() => setWeeklyMeals((v) => Math.min(21, v + 1))}
-              className="p-2 bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-350 dark:border-zinc-800 rounded-xl rounded-r-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-all cursor-pointer shadow-sm dark:shadow-none"
+              className="p-2 bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 border border-zinc-400 dark:border-zinc-800 rounded-xl rounded-r-full text-zinc-600 dark:text-zinc-400 hover:text-zinc-950 dark:hover:text-white transition-all cursor-pointer shadow-sm dark:shadow-none"
             >
               <Plus className="w-4 h-4" />
             </button>
           </div>
-          <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-450 mt-1 uppercase text-right">Equivalente a {Math.round(weeklyMeals / 3 * 10) / 10} días completos</span>
+          <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-500 mt-1 uppercase text-right">Equivalente a {Math.round(weeklyMeals / 3 * 10) / 10} días completos</span>
         </div>
       </div>
 
@@ -78,7 +78,7 @@ export default function ImpactCalculator() {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         
         {/* Metric A: Water */}
-        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-350 dark:hover:border-zinc-750 transition-all group shadow-sm dark:shadow-none">
+        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-400 dark:hover:border-zinc-700 transition-all group shadow-sm dark:shadow-none">
           <div className="space-y-4">
             <div className="w-10 h-10 rounded-2xl bg-cyan-500/10 border border-cyan-500/20 flex items-center justify-center">
               <Droplet className="w-5 h-5 text-cyan-600 dark:text-cyan-400" />
@@ -90,31 +90,31 @@ export default function ImpactCalculator() {
               </span>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-150 dark:border-zinc-900 transition-colors">
-            Equivale a llenar unas <strong className="text-zinc-800 dark:text-zinc-250 font-semibold">{olympicPools} piscinas olímpicas</strong> completas de agua potable o {Math.round(yearlyWater / 150).toLocaleString()} duchas de 10 minutos.
+          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 transition-colors">
+            Equivale a llenar unas <strong className="text-zinc-800 dark:text-zinc-300 font-semibold">{olympicPools} piscinas olímpicas</strong> completas de agua potable o {Math.round(yearlyWater / 150).toLocaleString()} duchas de 10 minutos.
           </p>
         </div>
 
         {/* Metric B: CO2 */}
-        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-350 dark:hover:border-zinc-750 transition-all group shadow-sm dark:shadow-none">
+        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-400 dark:hover:border-zinc-700 transition-all group shadow-sm dark:shadow-none">
           <div className="space-y-4">
             <div className="w-10 h-10 rounded-2xl bg-red-500/10 border border-red-500/20 flex items-center justify-center animate-pulse">
-              <Flame className="w-5 h-5 text-red-650 dark:text-red-400" />
+              <Flame className="w-5 h-5 text-red-600 dark:text-red-400" />
             </div>
             <div>
               <span className="text-[10px] font-mono text-zinc-500 dark:text-zinc-400 tracking-wider uppercase block">Emisiones CO2 Equivalente</span>
-              <span className="text-3xl font-extrabold text-red-650 dark:text-red-400 tracking-tight block">
+              <span className="text-3xl font-extrabold text-red-600 dark:text-red-400 tracking-tight block">
                 {yearlyCo2.toLocaleString()} <span className="text-xs text-zinc-500 font-normal">kg eq</span>
               </span>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-150 dark:border-zinc-900 transition-colors">
-            Equivale a conducir un turismo estándar de combustión directa por <strong className="text-zinc-800 dark:text-zinc-250 font-semibold">{carKm.toLocaleString()} km</strong> o recargar {Math.round(yearlyCo2 * 120).toLocaleString()} smartphones.
+          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 transition-colors">
+            Equivale a conducir un turismo estándar de combustión directa por <strong className="text-zinc-800 dark:text-zinc-300 font-semibold">{carKm.toLocaleString()} km</strong> o recargar {Math.round(yearlyCo2 * 120).toLocaleString()} smartphones.
           </p>
         </div>
 
         {/* Metric C: Forest Deforestation */}
-        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-350 dark:hover:border-zinc-750 transition-all group shadow-sm dark:shadow-none">
+        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-400 dark:hover:border-zinc-700 transition-all group shadow-sm dark:shadow-none">
           <div className="space-y-4">
             <div className="w-10 h-10 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
               <Trees className="w-5 h-5 text-emerald-600 dark:text-emerald-400" />
@@ -126,13 +126,13 @@ export default function ImpactCalculator() {
               </span>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-150 dark:border-zinc-900 transition-colors">
-            Representa unos <strong className="text-zinc-800 dark:text-zinc-250 font-semibold">{soccerFields} campos de fútbol</strong> de selva deforestada para dar cabida a pastizales o cultivo exclusivo de soja forrajera.
+          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 transition-colors">
+            Representa unos <strong className="text-zinc-800 dark:text-zinc-300 font-semibold">{soccerFields} campos de fútbol</strong> de selva deforestada para dar cabida a pastizales o cultivo exclusivo de soja forrajera.
           </p>
         </div>
 
         {/* Metric D: Grain */}
-        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-350 dark:hover:border-zinc-750 transition-all group shadow-sm dark:shadow-none">
+        <div className="bg-white dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-800/80 rounded-3xl p-6 flex flex-col justify-between hover:border-zinc-400 dark:hover:border-zinc-700 transition-all group shadow-sm dark:shadow-none">
           <div className="space-y-4">
             <div className="w-10 h-10 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center">
               <Grid className="w-5 h-5 text-amber-600 dark:text-amber-500" />
@@ -144,8 +144,8 @@ export default function ImpactCalculator() {
               </span>
             </div>
           </div>
-          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-150 dark:border-zinc-900 transition-colors">
-            Kilos de cereal de alta calidad filtrados e ineficientemente perdidos para alimentar ganado, suficientes para nutrir directamente a más de <strong className="text-zinc-800 dark:text-zinc-250 font-semibold">{Math.round(yearlyGrain / 150)} personas</strong> durante un mes completo.
+          <p className="text-[11px] text-zinc-600 dark:text-zinc-400 leading-relaxed font-light mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 transition-colors">
+            Kilos de cereal de alta calidad filtrados e ineficientemente perdidos para alimentar ganado, suficientes para nutrir directamente a más de <strong className="text-zinc-800 dark:text-zinc-300 font-semibold">{Math.round(yearlyGrain / 150)} personas</strong> durante un mes completo.
           </p>
         </div>
 
@@ -175,16 +175,16 @@ export default function ImpactCalculator() {
         </div>
 
         {/* Transition Comparison Panel */}
-        <div className="bg-zinc-50/50 dark:bg-zinc-950/50 p-5 rounded-2xl border border-zinc-250 dark:border-zinc-800 space-y-4 text-xs font-light shadow-sm dark:shadow-none">
+        <div className="bg-zinc-50/50 dark:bg-zinc-950/50 p-5 rounded-2xl border border-zinc-300 dark:border-zinc-800 space-y-4 text-xs font-light shadow-sm dark:shadow-none">
           <h4 className="font-mono text-[10px] text-zinc-500 dark:text-zinc-400 uppercase tracking-widest flex items-center gap-1.5 border-b border-zinc-200 dark:border-zinc-900 pb-2">
-            <LineChart className="w-3.5 h-3.5 text-zinc-800 dark:text-zinc-150" />
+            <LineChart className="w-3.5 h-3.5 text-zinc-800 dark:text-zinc-200" />
             Simulador de Transición Dietética
           </h4>
           
           <div className="space-y-3">
             <div className="flex justify-between items-center bg-zinc-100/70 dark:bg-zinc-900/40 px-3 py-2 rounded-xl border border-zinc-200 dark:border-transparent">
               <span className="text-zinc-600 dark:text-zinc-400 text-[11px]">Consumo Actual (Dieta Estándar)</span>
-              <span className="text-red-650 dark:text-red-400 font-bold font-mono">100% Gasto Fáctico</span>
+              <span className="text-red-600 dark:text-red-400 font-bold font-mono">100% Gasto Fáctico</span>
             </div>
             <div className="flex items-center justify-center py-0.5">
               <ArrowRight className="w-4 h-4 text-zinc-400 dark:text-zinc-700 animate-pulse rotate-90 md:rotate-0" />
@@ -194,7 +194,7 @@ export default function ImpactCalculator() {
                 <span className="text-zinc-900 dark:text-white text-[11px] font-semibold block">Transición Vegana Directa (0 comidas animales)</span>
                 <span className="text-[10px] text-zinc-500">Cero consumo de cobalamina parasitaria ganadera</span>
               </div>
-              <span className="text-emerald-700 dark:text-emerald-400 font-bold font-mono text-xs bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-250 dark:border-emerald-900/40 px-2 py-0.5 rounded">
+              <span className="text-emerald-700 dark:text-emerald-400 font-bold font-mono text-xs bg-emerald-100 dark:bg-emerald-950/40 border border-emerald-300 dark:border-emerald-900/40 px-2 py-0.5 rounded">
                 -92% Huella
               </span>
             </div>

@@ -100,7 +100,7 @@ export default function App() {
 
             <button
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-850 text-zinc-650 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-800 transition-all cursor-pointer flex items-center justify-center"
+              className="p-2 rounded-xl bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-300 hover:text-zinc-900 dark:hover:text-white border border-zinc-200 dark:border-zinc-800 transition-all cursor-pointer flex items-center justify-center"
               title={theme === "dark" ? "Cambiar a modo claro" : "Cambiar a modo oscuro"}
             >
               {theme === "dark" ? (
@@ -131,14 +131,14 @@ export default function App() {
               transition={{ duration: 0.25 }}
               className="space-y-4 max-w-4xl"
             >
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-850 transition-colors">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-colors">
                 <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse animate-duration-1500" />
                 <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 dark:text-zinc-400 font-bold">Iniciativa bioética laica</span>
               </div>
               <h2 className="text-3xl sm:text-5xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
                 ¿Qué vidas importan?
               </h2>
-              <p className="text-zinc-650 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
+              <p className="text-zinc-600 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
                 Un análisis crítico sobre nuestra relación con los animales y los axiomas que la definen
               </p>
             </motion.div>
@@ -239,7 +239,7 @@ export default function App() {
 
       {/* Simple, descriptive minimal footer */}
       <footer className="border-t border-zinc-200 dark:border-zinc-900/60 py-6 mt-16 bg-white dark:bg-zinc-950 transition-colors">
-        <div id="footer-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[11px] font-mono text-zinc-550 dark:text-zinc-650">
+        <div id="footer-section" className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-col md:flex-row justify-between items-center gap-4 text-[11px] font-mono text-zinc-500 dark:text-zinc-600">
           <div className="flex items-center gap-1.5">
             <Heart className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-700" />
             <span>Sitiens es un proyecto educativo de libre deconstrucción moral.</span>

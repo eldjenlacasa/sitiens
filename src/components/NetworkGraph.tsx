@@ -1,6 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { CORE_NODES, NodeDetail } from "../types";
-import { Info, HelpCircle, Activity, Globe, Scale } from "lucide-react";
+import { Info, HelpCircle, Activity, Globe, Scale, Maximize2, Minimize2 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 
 interface GraphNode {
@@ -31,6 +31,10 @@ export default function NetworkGraph() {
   const [draggedNode, setDraggedNode] = useState<GraphNode | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
   const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+  
+  // Custom states for premium interactive features
+  const [activeCategoryFilter, setActiveCategoryFilter] = useState<string | null>(null);
+  const [isFullscreen, setIsFullscreen] = useState(false);
 
   // Sync isDark state dynamically with document.documentElement class mutations (theme switcher)
   useEffect(() => {
@@ -95,16 +99,16 @@ export default function NetworkGraph() {
       window.requestAnimationFrame(() => {
         setDimensions({
           width: Math.max(width, 300),
-          height: Math.max(height, 420)
+          height: Math.max(height, isFullscreen ? 500 : 420)
         });
       });
     });
 
     resizeObserver.observe(containerRef.current);
     return () => resizeObserver.disconnect();
-  }, []);
+  }, [isFullscreen]);
 
-  // Physics loop (force-directed layout simulation)
+  // Physics loop (force-directed layout simulation with rigid collision prevention)
   useEffect(() => {
     if (nodes.length === 0) return;
 
@@ -123,8 +127,9 @@ export default function NetworkGraph() {
             const dy = nodeB.y - nodeA.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             
-            if (dist < 180) {
-              const force = (180 - dist) * 0.04;
+            const repulsionRadius = 220; // Increased spacing for cards
+            if (dist < repulsionRadius) {
+              const force = (repulsionRadius - dist) * 0.035;
               const fx = (dx / dist) * force;
               const fy = (dy / dist) * force;
               
@@ -133,8 +138,8 @@ export default function NetworkGraph() {
                 nodeA.vy -= fy;
               }
               if (draggedNode?.id !== nodeB.id) {
-                nodeB.x += fx;
-                nodeB.y += fy;
+                nodeB.vx += fx;
+                nodeB.vy += fy;
               }
             }
           }
@@ -150,8 +155,8 @@ export default function NetworkGraph() {
             const dy = targetNode.y - sourceNode.y;
             const dist = Math.sqrt(dx * dx + dy * dy) || 1;
             
-            const targetDist = 110;
-            const force = (dist - targetDist) * 0.035;
+            const targetDist = 130;
+            const force = (dist - targetDist) * 0.025;
             const fx = (dx / dist) * force;
             const fy = (dy / dist) * force;
 
@@ -171,27 +176,64 @@ export default function NetworkGraph() {
           let cx = dimensions.width / 2;
           let cy = dimensions.height / 2;
 
-          if (node.category === "sintiencia") { cx = dimensions.width * 0.28; cy = dimensions.height * 0.28; }
-          else if (node.category === "historia") { cx = dimensions.width * 0.72; cy = dimensions.height * 0.28; }
-          else if (node.category === "clima") { cx = dimensions.width * 0.28; cy = dimensions.height * 0.72; }
-          else if (node.category === "eleccion") { cx = dimensions.width * 0.72; cy = dimensions.height * 0.72; }
+          if (node.category === "sintiencia") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.28; }
+          else if (node.category === "historia") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.28; }
+          else if (node.category === "clima") { cx = dimensions.width * 0.25; cy = dimensions.height * 0.72; }
+          else if (node.category === "eleccion") { cx = dimensions.width * 0.75; cy = dimensions.height * 0.72; }
 
           const dx = cx - node.x;
           const dy = cy - node.y;
-          node.vx += dx * 0.01;
-          node.vy += dy * 0.01;
+          node.vx += dx * 0.008;
+          node.vy += dy * 0.008;
 
-          node.vx *= 0.75;
-          node.vy *= 0.75;
+          node.vx *= 0.72;
+          node.vy *= 0.72;
 
           if (draggedNode?.id !== node.id) {
             node.x += node.vx;
             node.y += node.vy;
           }
+        });
 
-          const margin = 35;
-          node.x = Math.max(margin, Math.min(dimensions.width - margin, node.x));
-          node.y = Math.max(margin, Math.min(dimensions.height - margin, node.y));
+        // 4. Hard Collision Constraint (Rigid body overlap prevention)
+        const minCollisionDist = 135; // Prevents HTML card overlaps perfectly
+        for (let k = 0; k < 3; k++) {
+          for (let i = 0; i < nextNodes.length; i++) {
+            const nodeA = nextNodes[i];
+            for (let j = i + 1; j < nextNodes.length; j++) {
+              const nodeB = nextNodes[j];
+              const dx = nodeB.x - nodeA.x;
+              const dy = nodeB.y - nodeA.y;
+              const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+
+              if (dist < minCollisionDist) {
+                const overlap = minCollisionDist - dist;
+                const px = (dx / dist) * overlap * 0.5;
+                const py = (dy / dist) * overlap * 0.5;
+
+                if (draggedNode?.id === nodeA.id) {
+                  nodeB.x += px * 2;
+                  nodeB.y += py * 2;
+                } else if (draggedNode?.id === nodeB.id) {
+                  nodeA.x -= px * 2;
+                  nodeA.y -= py * 2;
+                } else {
+                  nodeA.x -= px;
+                  nodeA.y -= py;
+                  nodeB.x += px;
+                  nodeB.y += py;
+                }
+              }
+            }
+          }
+        }
+
+        // 5. Apply boundaries strictly
+        nextNodes.forEach((node) => {
+          const marginX = 85;
+          const marginY = 45;
+          node.x = Math.max(marginX, Math.min(dimensions.width - marginX, node.x));
+          node.y = Math.max(marginY, Math.min(dimensions.height - marginY, node.y));
         });
 
         return nextNodes;
@@ -204,15 +246,21 @@ export default function NetworkGraph() {
     return () => cancelAnimationFrame(animationFrameId);
   }, [links, draggedNode, dimensions]);
 
-  // Render Loop
+  // Render Loop for Background Canvas (high-DPI, glowing lines, flow particles)
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
-    const isDark = document.documentElement.classList.contains("dark");
+    // High-DPI Scaling logic
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = dimensions.width * dpr;
+    canvas.height = dimensions.height * dpr;
+    canvas.style.width = `${dimensions.width}px`;
+    canvas.style.height = `${dimensions.height}px`;
 
+    ctx.scale(dpr, dpr);
     ctx.clearRect(0, 0, dimensions.width, dimensions.height);
     ctx.lineCap = "round";
 
@@ -222,9 +270,16 @@ export default function NetworkGraph() {
       const target = nodes.find((n) => n.id === link.target);
 
       if (source && target) {
-        const isHighlight =
-          (selectedNode && (source.id === selectedNode.id || target.id === selectedNode.id)) ||
-          (hoveredNode && (source.id === hoveredNode.id || target.id === hoveredNode.id));
+        // Enforce active category filter
+        if (activeCategoryFilter) {
+          if (source.category !== activeCategoryFilter && target.category !== activeCategoryFilter) {
+            return; // Don't draw line at all if not related to filter
+          }
+        }
+
+        const isSelectedLink = selectedNode && (source.id === selectedNode.id || target.id === selectedNode.id);
+        const isHoverLink = hoveredNode && (source.id === hoveredNode.id || target.id === hoveredNode.id);
+        const isHighlight = isSelectedLink || isHoverLink;
 
         const grad = ctx.createLinearGradient(source.x, source.y, target.x, target.y);
         
@@ -235,7 +290,14 @@ export default function NetworkGraph() {
           return `rgba(245, 158, 11, ${opacity})`;
         };
 
-        const opacity = isHighlight ? 0.6 : (isDark ? 0.15 : 0.08);
+        let opacity = isDark ? 0.12 : 0.06;
+        if (isHighlight) {
+          opacity = isSelectedLink ? 0.75 : 0.55;
+        } else if (selectedNode || hoveredNode) {
+          // Dim other connections when a node is highlighted
+          opacity = isDark ? 0.03 : 0.015;
+        }
+
         grad.addColorStop(0, getCatColor(source.category, opacity));
         grad.addColorStop(1, getCatColor(target.category, opacity));
 
@@ -247,86 +309,81 @@ export default function NetworkGraph() {
         ctx.lineTo(target.x, target.y);
         ctx.stroke();
 
+        // Draw flowing particles along highlighted links
         if (isHighlight) {
-          const time = Date.now() * 0.001;
-          const ratio = (time % 1);
-          const px = source.x + (target.x - source.x) * ratio;
-          const py = source.y + (target.y - source.y) * ratio;
-          ctx.fillStyle = source.id === selectedNode?.id ? (isDark ? "#ffffff" : "#18181b") : getCatColor(source.category, 0.8);
-          ctx.beginPath();
-          ctx.arc(px, py, 3, 0, Math.PI * 2);
-          ctx.fill();
+          const time = Date.now() * 0.0015;
+          const count = 2;
+          for (let p = 0; p < count; p++) {
+            const ratio = (time + p / count) % 1;
+            const flowRatio = (source.id === selectedNode?.id || source.id === hoveredNode?.id) ? ratio : (1 - ratio);
+            
+            const px = source.x + (target.x - source.x) * flowRatio;
+            const py = source.y + (target.y - source.y) * flowRatio;
+
+            ctx.fillStyle = getCatColor(source.category, 0.95);
+            ctx.shadowBlur = 6;
+            ctx.shadowColor = source.category === "sintiencia" ? "#ef4444" :
+                             source.category === "clima" ? "#10b981" :
+                             source.category === "historia" ? "#3b82f6" : "#f59e0b";
+
+            ctx.beginPath();
+            ctx.arc(px, py, 2.5, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.shadowBlur = 0; // reset shadow immediately
+          }
         }
       }
     });
 
-    // 2. Draw nodes
+    // 2. Draw canvas glows behind highlighted nodes
     nodes.forEach((node) => {
       const isSelected = selectedNode?.id === node.id;
       const isHovered = hoveredNode?.id === node.id;
+      const isFilteredOut = activeCategoryFilter && node.category !== activeCategoryFilter;
 
-      let nodeColorHex = "#ffffff";
-      let glowColor = "rgba(255, 255, 255, 0.2)";
-      if (node.category === "sintiencia") {
-        nodeColorHex = "#ef4444"; glowColor = "rgba(239, 68, 68, 0.4)";
-      } else if (node.category === "clima") {
-        nodeColorHex = "#10b981"; glowColor = "rgba(16, 185, 129, 0.4)";
-      } else if (node.category === "historia") {
-        nodeColorHex = "#3b82f6"; glowColor = "rgba(59, 130, 246, 0.4)";
-      } else if (node.category === "eleccion") {
-        nodeColorHex = "#f59e0b"; glowColor = "rgba(245, 158, 11, 0.4)";
-      }
+      if ((isSelected || isHovered) && !isFilteredOut) {
+        let nodeColorHex = "#ffffff";
+        if (node.category === "sintiencia") nodeColorHex = "#ef4444";
+        else if (node.category === "clima") nodeColorHex = "#10b981";
+        else if (node.category === "historia") nodeColorHex = "#3b82f6";
+        else if (node.category === "eleccion") nodeColorHex = "#f59e0b";
 
-      if (isSelected || isHovered) {
-        ctx.shadowBlur = isSelected ? 20 : 10;
+        ctx.shadowBlur = isSelected ? 30 : 15;
         ctx.shadowColor = nodeColorHex;
-        ctx.strokeStyle = glowColor;
-        ctx.lineWidth = isSelected ? 5 : 3;
+        
+        ctx.fillStyle = isSelected 
+          ? (node.category === "sintiencia" ? "rgba(239, 68, 68, 0.12)" :
+             node.category === "clima" ? "rgba(16, 185, 129, 0.12)" :
+             node.category === "historia" ? "rgba(59, 130, 246, 0.12)" : "rgba(245, 158, 11, 0.12)")
+          : "rgba(255, 255, 255, 0.04)";
+
         ctx.beginPath();
-        ctx.arc(node.x, node.y, node.radius + (isSelected ? 3 : 2), 0, Math.PI * 2);
-        ctx.stroke();
+        ctx.arc(node.x, node.y, 45, 0, Math.PI * 2);
+        ctx.fill();
         ctx.shadowBlur = 0;
       }
-
-      ctx.fillStyle = isSelected ? (isDark ? "#ffffff" : "#18181b") : nodeColorHex;
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, isSelected ? 9 : 7, 0, Math.PI * 2);
-      ctx.fill();
-
-      ctx.strokeStyle = isDark ? "#09090b" : "#fafafa";
-      ctx.lineWidth = 1.5;
-      ctx.beginPath();
-      ctx.arc(node.x, node.y, isSelected ? 9 : 7, 0, Math.PI * 2);
-      ctx.stroke();
-
-      ctx.fillStyle = isSelected ? (isDark ? "#ffffff" : "#18181b") : isHovered ? (isDark ? "#e4e4e7" : "#27272a") : (isDark ? "#a1a1aa" : "#71717a");
-      ctx.font = isSelected ? "bold 11px Outfit, Inter, system-ui, sans-serif" : "10px Outfit, Inter, system-ui, sans-serif";
-      ctx.textAlign = "center";
-      ctx.fillText(node.title, node.x, node.y - 15);
     });
 
-  }, [nodes, links, selectedNode, hoveredNode, dimensions, isDark]);
+  }, [nodes, links, selectedNode, hoveredNode, dimensions, isDark, activeCategoryFilter]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const clickY = e.clientY - rect.top;
+    const clickX = ((e.clientX - rect.left) / rect.width) * dimensions.width;
+    const clickY = ((e.clientY - rect.top) / rect.height) * dimensions.height;
 
     let clicked: GraphNode | null = null;
-    let mindist = Infinity;
-
-    nodes.forEach((n) => {
-      const dx = n.x - clickX;
-      const dy = n.y - clickY;
-      const dist = Math.sqrt(dx * dx + dy * dy);
-      if (dist < n.radius + 15 && dist < mindist) {
+    
+    // Check bounding box of node cards
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      if (clickX >= n.x - 70 && clickX <= n.x + 70 && clickY >= n.y - 25 && clickY <= n.y + 25) {
         clicked = n;
-        mindist = dist;
+        break;
       }
-    });
+    }
 
     if (clicked) {
       setSelectedNode((clicked as GraphNode).nodeRef);
@@ -338,17 +395,17 @@ export default function NetworkGraph() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const mouseX = ((e.clientX - rect.left) / rect.width) * dimensions.width;
+    const mouseY = ((e.clientY - rect.top) / rect.height) * dimensions.height;
 
     let target: GraphNode | null = null;
-    nodes.forEach((n) => {
-      const dx = n.x - mouseX;
-      const dy = n.y - mouseY;
-      if (Math.sqrt(dx * dx + dy * dy) < n.radius + 10) {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      if (mouseX >= n.x - 70 && mouseX <= n.x + 70 && mouseY >= n.y - 25 && mouseY <= n.y + 25) {
         target = n;
+        break;
       }
-    });
+    }
 
     if (target) {
       setDraggedNode(target);
@@ -360,8 +417,8 @@ export default function NetworkGraph() {
     if (!canvas) return;
 
     const rect = canvas.getBoundingClientRect();
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const mouseX = ((e.clientX - rect.left) / rect.width) * dimensions.width;
+    const mouseY = ((e.clientY - rect.top) / rect.height) * dimensions.height;
 
     if (draggedNode) {
       setNodes((current) =>
@@ -370,19 +427,19 @@ export default function NetworkGraph() {
             return { ...n, x: mouseX, y: mouseY, vx: 0, vy: 0 };
           }
           return n;
-         })
+        })
       );
       return;
     }
 
     let hoverTarget: GraphNode | null = null;
-    nodes.forEach((n) => {
-      const dx = n.x - mouseX;
-      const dy = n.y - mouseY;
-      if (Math.sqrt(dx * dx + dy * dy) < n.radius + 10) {
+    for (let i = nodes.length - 1; i >= 0; i--) {
+      const n = nodes[i];
+      if (mouseX >= n.x - 70 && mouseX <= n.x + 70 && mouseY >= n.y - 25 && mouseY <= n.y + 25) {
         hoverTarget = n;
+        break;
       }
-    });
+    }
     setHoveredNode(hoverTarget);
   };
 
@@ -421,23 +478,40 @@ export default function NetworkGraph() {
   };
 
   return (
-    <div id="network-graph-view" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-200 dark:border-zinc-800 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300">
-      <div className="lg:col-span-7 flex flex-col justify-between p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[420px] lg:min-h-[550px] transition-colors duration-300">
+    <div 
+      id="network-graph-view" 
+      className={
+        isFullscreen 
+          ? "fixed inset-0 z-50 p-6 md:p-8 bg-zinc-50/98 dark:bg-zinc-950/98 backdrop-blur-lg flex flex-col lg:flex-row gap-8 overflow-y-auto w-screen h-screen transition-all duration-300"
+          : "grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-200 dark:border-zinc-800 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300"
+      }
+    >
+      <div className={`${isFullscreen ? "lg:w-7/12 flex-1" : "lg:col-span-7"} flex flex-col justify-between p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300 rounded-2xl`}>
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase transition-colors">
+            <h3 className="text-xs font-bold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase transition-colors">
               Grafo de Interconexiones de Sitiens
             </h3>
-            <span className="text-xs font-mono text-zinc-500 bg-zinc-200/50 dark:bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-300/50 dark:border-zinc-800/80 transition-colors">
-              Fuerza Activa de Repulsión
-            </span>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => setIsFullscreen(!isFullscreen)}
+                className="p-1.5 rounded-lg bg-zinc-200/60 dark:bg-zinc-900/60 hover:bg-zinc-300/80 dark:hover:bg-zinc-800/80 border border-zinc-300/50 dark:border-zinc-800 text-zinc-500 hover:text-zinc-800 dark:hover:text-white transition-all cursor-pointer flex items-center justify-center"
+                title={isFullscreen ? "Salir de pantalla completa" : "Ver en pantalla completa"}
+              >
+                {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
+              </button>
+              <span className="text-[10px] font-mono text-zinc-500 bg-zinc-200/50 dark:bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-300/50 dark:border-zinc-800/80 transition-colors">
+                Física Colisión Activa
+              </span>
+            </div>
           </div>
-          <p className="text-xs text-zinc-500 max-w-sm mb-4">
-            Arrastra los nodos para liberar la física o clica sobre ellos para descolgar su tesis científica y conexiones morales.
+          <p className="text-[11px] text-zinc-500 max-w-sm mb-4 leading-relaxed">
+            Arrastra los nodos libremente. El motor físico impedirá que se solapen. Haz clic en ellos para explorar sus conexiones y tesis.
           </p>
         </div>
 
-        <div ref={containerRef} className="flex-1 w-full relative min-h-[300px]">
+        {/* Viewport container */}
+        <div ref={containerRef} className="flex-1 w-full relative min-h-[350px] overflow-hidden rounded-xl border border-zinc-200/50 dark:border-zinc-800/50 bg-white/30 dark:bg-zinc-950/20">
           <canvas
             ref={canvasRef}
             width={dimensions.width}
@@ -449,29 +523,137 @@ export default function NetworkGraph() {
             onMouseLeave={handleMouseUpOrLeave}
             className="absolute inset-0 cursor-grab active:cursor-grabbing w-full h-full"
           />
+
+          {/* HTML Overlay with absolutely-positioned node cards */}
+          <div 
+            className="absolute inset-0 pointer-events-none select-none overflow-hidden"
+            style={{ width: dimensions.width, height: dimensions.height }}
+          >
+            {nodes.map((node) => {
+              const isSelected = selectedNode?.id === node.id;
+              const isHovered = hoveredNode?.id === node.id;
+              const isFilteredOut = activeCategoryFilter && node.category !== activeCategoryFilter;
+              
+              // Find if this node is connected to the selected/hovered node
+              const isConnected = selectedNode && (
+                node.id === selectedNode.id || 
+                selectedNode.connections.includes(node.id) ||
+                node.nodeRef.connections.includes(selectedNode.id)
+              );
+
+              const isHoverConnected = hoveredNode && (
+                node.id === hoveredNode.id ||
+                hoveredNode.nodeRef.connections.includes(node.id) ||
+                node.nodeRef.connections.includes(hoveredNode.id)
+              );
+
+              let categoryColorClass = "border-zinc-200 dark:border-zinc-800";
+              let categoryBgClass = "bg-white/75 dark:bg-zinc-950/75";
+              let glowColorClass = "";
+              let dotColorClass = "bg-zinc-400";
+
+              if (node.category === "sintiencia") {
+                categoryColorClass = isSelected ? "border-red-500 ring-2 ring-red-500/30" : isHovered ? "border-red-400/80" : "border-red-500/20 dark:border-red-500/30";
+                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(239,68,68,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(239,68,68,0.15)]" : "";
+                dotColorClass = "bg-red-500";
+              } else if (node.category === "clima") {
+                categoryColorClass = isSelected ? "border-emerald-500 ring-2 ring-emerald-500/30" : isHovered ? "border-emerald-400/80" : "border-emerald-500/20 dark:border-emerald-500/30";
+                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(16,185,129,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(16,185,129,0.15)]" : "";
+                dotColorClass = "bg-emerald-500";
+              } else if (node.category === "historia") {
+                categoryColorClass = isSelected ? "border-blue-500 ring-2 ring-blue-500/30" : isHovered ? "border-blue-400/80" : "border-blue-500/20 dark:border-blue-500/30";
+                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(59,130,246,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(59,130,246,0.15)]" : "";
+                dotColorClass = "bg-blue-500";
+              } else if (node.category === "eleccion") {
+                categoryColorClass = isSelected ? "border-amber-500 ring-2 ring-amber-500/30" : isHovered ? "border-amber-400/80" : "border-amber-500/20 dark:border-amber-500/30";
+                glowColorClass = isSelected ? "shadow-[0_0_15px_rgba(245,158,11,0.25)]" : isHovered ? "shadow-[0_0_8px_rgba(245,158,11,0.15)]" : "";
+                dotColorClass = "bg-amber-500";
+              }
+
+              // Dim nodes based on active focus
+              let opacityClass = "opacity-100 scale-100 z-10";
+              if (isFilteredOut) {
+                opacityClass = "opacity-35 scale-95 z-0";
+              } else if (selectedNode && !isConnected) {
+                opacityClass = "opacity-45 scale-95 z-0";
+              } else if (hoveredNode && !isHoverConnected) {
+                opacityClass = "opacity-60 z-0";
+              }
+              
+              if (isSelected) {
+                opacityClass = "opacity-100 scale-105 z-30 ring-2 ring-offset-2 dark:ring-offset-zinc-950 ring-zinc-300 dark:ring-zinc-800";
+              } else if (isHovered) {
+                opacityClass = "opacity-100 scale-[1.03] z-20";
+              }
+
+              return (
+                <div
+                  key={node.id}
+                  className={`absolute flex items-center gap-2 w-[140px] px-2.5 py-2 rounded-xl backdrop-blur-md transition-all duration-200 ease-out border text-left ${categoryBgClass} ${categoryColorClass} ${glowColorClass} ${opacityClass}`}
+                  style={{
+                    left: 0,
+                    top: 0,
+                    transform: `translate3d(calc(${node.x}px - 50%), calc(${node.y}px - 50%), 0)`,
+                  }}
+                >
+                  <div className="relative flex h-2 w-2 shrink-0">
+                    {isSelected && (
+                      <span className={`animate-ping absolute inline-flex h-full w-full rounded-full opacity-75 ${dotColorClass}`} />
+                    )}
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${dotColorClass}`} />
+                  </div>
+                  
+                  <span className="text-[10px] font-sans font-semibold tracking-tight text-zinc-800 dark:text-zinc-200 leading-[1.25] break-words whitespace-normal select-none w-full">
+                    {node.title}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 text-xs font-mono transition-colors">
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
-            <span className="text-zinc-500">Sintiencia</span>
+        {/* Legend / Category Filter Tabs */}
+        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 text-xs font-mono transition-colors items-center justify-between w-full">
+          <div className="flex flex-wrap gap-2.5">
+            {(
+              [
+                { id: "sintiencia", label: "Sintiencia", color: "bg-red-500" },
+                { id: "historia", label: "Historia", color: "bg-blue-500" },
+                { id: "clima", label: "Clima", color: "bg-emerald-500" },
+                { id: "eleccion", label: "Elección Moral", color: "bg-amber-500" }
+              ]
+            ).map((cat) => {
+              const isActive = activeCategoryFilter === cat.id;
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setActiveCategoryFilter(isActive ? null : cat.id)}
+                  className={`flex items-center gap-2 px-2.5 py-1 rounded-lg border transition-all cursor-pointer shadow-xs ${
+                    isActive 
+                      ? "bg-zinc-800 dark:bg-zinc-100 text-white dark:text-zinc-900 border-zinc-700 dark:border-zinc-200 font-bold scale-102"
+                      : "bg-white/60 dark:bg-zinc-900/60 text-zinc-500 hover:text-zinc-900 dark:hover:text-white border-zinc-200 dark:border-zinc-800/80 hover:bg-zinc-100/50 dark:hover:bg-zinc-800/50"
+                  }`}
+                >
+                  <span className={`w-2 h-2 rounded-full ${cat.color} shrink-0`} />
+                  <span className="text-[10px] tracking-tight">{cat.label}</span>
+                </button>
+              );
+            })}
           </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
-            <span className="text-zinc-500">Historia</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
-            <span className="text-zinc-500">Clima</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
-            <span className="text-zinc-500">Elección Moral</span>
-          </div>
+
+          {activeCategoryFilter && (
+            <button
+              onClick={() => setActiveCategoryFilter(null)}
+              className="text-[10px] text-violet-500 hover:text-violet-600 dark:text-violet-400 dark:hover:text-violet-300 font-bold underline cursor-pointer"
+            >
+              Limpiar Filtro
+            </button>
+          )}
         </div>
       </div>
 
-      <div className="lg:col-span-5 p-6 lg:p-8 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300">
+      {/* Details Panel */}
+      <div className={`${isFullscreen ? "lg:w-5/12 max-h-[90vh] overflow-y-auto custom-scrollbar" : "lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800"} p-6 lg:p-8 flex flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 rounded-2xl`}>
         <AnimatePresence mode="wait">
           {selectedNode ? (
             <motion.div
@@ -493,23 +675,23 @@ export default function NetworkGraph() {
                   </div>
                 </div>
 
-                <h2 className="text-2xl font-extrabold text-zinc-900 dark:text-white tracking-tight border-b border-zinc-200 dark:border-zinc-800 pb-3 transition-colors">
+                <h2 className="text-xl font-extrabold text-zinc-900 dark:text-white tracking-tight border-b border-zinc-200 dark:border-zinc-800 pb-3 transition-colors">
                   {selectedNode.title}
                 </h2>
 
-                <p className="text-sm text-zinc-650 dark:text-zinc-400 font-light leading-relaxed transition-colors">
+                <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors">
                   {selectedNode.longDesc}
                 </p>
 
                 <div className="space-y-3 pt-2">
-                  <h4 className="text-xs font-semibold tracking-wider text-zinc-700 dark:text-zinc-300 font-mono flex items-center gap-1.5 transition-colors">
+                  <h4 className="text-[10px] font-bold tracking-wider text-zinc-700 dark:text-zinc-300 font-mono flex items-center gap-1.5 transition-colors">
                     <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-white animate-pulse" />
                     EVIDENCIAS Y HECHOS FÁCTICOS:
                   </h4>
-                  <ul className="space-y-2 text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-light">
+                  <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-light">
                     {selectedNode.scientificFacts.map((fact, i) => (
                       <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800/40 transition-colors">
-                        <span className="text-zinc-400 dark:text-zinc-650 font-mono font-medium mt-0.5">[{i + 1}]</span>
+                        <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5">[{i + 1}]</span>
                         <span>{fact}</span>
                       </li>
                     ))}
@@ -518,7 +700,7 @@ export default function NetworkGraph() {
 
                 {selectedNode.citation && (
                   <div className="p-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono text-zinc-500 dark:text-zinc-500 leading-relaxed transition-colors">
-                    <span className="text-[8px] uppercase tracking-widest text-zinc-650 block mb-1 font-bold">
+                    <span className="text-[8px] uppercase tracking-widest text-zinc-600 block mb-1 font-bold">
                       Fuente / Referencia Académica:
                     </span>
                     📖 {selectedNode.citation}
@@ -527,7 +709,7 @@ export default function NetworkGraph() {
               </div>
 
               <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800/60 transition-colors">
-                <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-400 dark:text-zinc-500 block mb-2">
+                <span className="text-[9px] font-mono tracking-widest uppercase text-zinc-400 dark:text-zinc-500 block mb-2">
                   Conexiones Lógicas en la Red:
                 </span>
                 <div className="flex flex-wrap gap-2">
@@ -538,7 +720,7 @@ export default function NetworkGraph() {
                       <button
                         key={connId}
                         onClick={() => setSelectedNode(linked)}
-                        className="text-xs px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800/80 transition-all flex items-center gap-1.5 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-sm dark:shadow-none cursor-pointer"
+                        className="text-[11px] px-2.5 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200/80 dark:border-zinc-800/85 transition-all flex items-center gap-1.5 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-xs dark:shadow-none cursor-pointer"
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           linked.category === 'sintiencia' ? 'bg-red-500' :
@@ -553,9 +735,9 @@ export default function NetworkGraph() {
               </div>
             </motion.div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-center h-full text-zinc-450 dark:text-zinc-500 py-16">
+            <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 dark:text-zinc-500 py-16">
               <HelpCircle className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 mb-2 animate-pulse" />
-              <p className="text-sm font-light">Selecciona un nodo del grafo para explorar su lógica causal.</p>
+              <p className="text-xs font-light">Selecciona un nodo del grafo para explorar su lógica causal.</p>
             </div>
           )}
         </AnimatePresence>
