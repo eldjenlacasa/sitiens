@@ -30,6 +30,16 @@ export default function NetworkGraph() {
   const [hoveredNode, setHoveredNode] = useState<GraphNode | null>(null);
   const [draggedNode, setDraggedNode] = useState<GraphNode | null>(null);
   const [dimensions, setDimensions] = useState({ width: 600, height: 400 });
+  const [isDark, setIsDark] = useState(() => document.documentElement.classList.contains("dark"));
+
+  // Sync isDark state dynamically with document.documentElement class mutations (theme switcher)
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      setIsDark(document.documentElement.classList.contains("dark"));
+    });
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    return () => observer.disconnect();
+  }, []);
 
   // Initialize nodes and links
   useEffect(() => {
@@ -201,6 +211,8 @@ export default function NetworkGraph() {
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
 
+    const isDark = document.documentElement.classList.contains("dark");
+
     ctx.clearRect(0, 0, dimensions.width, dimensions.height);
     ctx.lineCap = "round";
 
@@ -223,7 +235,7 @@ export default function NetworkGraph() {
           return `rgba(245, 158, 11, ${opacity})`;
         };
 
-        const opacity = isHighlight ? 0.6 : 0.15;
+        const opacity = isHighlight ? 0.6 : (isDark ? 0.15 : 0.08);
         grad.addColorStop(0, getCatColor(source.category, opacity));
         grad.addColorStop(1, getCatColor(target.category, opacity));
 
@@ -240,7 +252,7 @@ export default function NetworkGraph() {
           const ratio = (time % 1);
           const px = source.x + (target.x - source.x) * ratio;
           const py = source.y + (target.y - source.y) * ratio;
-          ctx.fillStyle = source.id === selectedNode?.id ? "#ffffff" : getCatColor(source.category, 0.8);
+          ctx.fillStyle = source.id === selectedNode?.id ? (isDark ? "#ffffff" : "#18181b") : getCatColor(source.category, 0.8);
           ctx.beginPath();
           ctx.arc(px, py, 3, 0, Math.PI * 2);
           ctx.fill();
@@ -276,24 +288,24 @@ export default function NetworkGraph() {
         ctx.shadowBlur = 0;
       }
 
-      ctx.fillStyle = isSelected ? "#ffffff" : nodeColorHex;
+      ctx.fillStyle = isSelected ? (isDark ? "#ffffff" : "#18181b") : nodeColorHex;
       ctx.beginPath();
       ctx.arc(node.x, node.y, isSelected ? 9 : 7, 0, Math.PI * 2);
       ctx.fill();
 
-      ctx.strokeStyle = "#09090b";
+      ctx.strokeStyle = isDark ? "#09090b" : "#fafafa";
       ctx.lineWidth = 1.5;
       ctx.beginPath();
       ctx.arc(node.x, node.y, isSelected ? 9 : 7, 0, Math.PI * 2);
       ctx.stroke();
 
-      ctx.fillStyle = isSelected ? "#ffffff" : isHovered ? "#e4e4e7" : "#a1a1aa";
-      ctx.font = isSelected ? "bold 11px Inter, system-ui, sans-serif" : "10px Inter, system-ui, sans-serif";
+      ctx.fillStyle = isSelected ? (isDark ? "#ffffff" : "#18181b") : isHovered ? (isDark ? "#e4e4e7" : "#27272a") : (isDark ? "#a1a1aa" : "#71717a");
+      ctx.font = isSelected ? "bold 11px Outfit, Inter, system-ui, sans-serif" : "10px Outfit, Inter, system-ui, sans-serif";
       ctx.textAlign = "center";
       ctx.fillText(node.title, node.x, node.y - 15);
     });
 
-  }, [nodes, links, selectedNode, hoveredNode, dimensions]);
+  }, [nodes, links, selectedNode, hoveredNode, dimensions, isDark]);
 
   const handleCanvasClick = (e: React.MouseEvent<HTMLCanvasElement>) => {
     const canvas = canvasRef.current;
@@ -358,7 +370,7 @@ export default function NetworkGraph() {
             return { ...n, x: mouseX, y: mouseY, vx: 0, vy: 0 };
           }
           return n;
-        })
+         })
       );
       return;
     }
@@ -396,27 +408,27 @@ export default function NetworkGraph() {
   const getCategoryBadgeClass = (category: string) => {
     switch (category) {
       case "sintiencia":
-        return "bg-red-500/10 text-red-400 border border-red-500/20";
+        return "bg-red-500/10 text-red-500 border border-red-500/20";
       case "clima":
-        return "bg-emerald-500/10 text-emerald-400 border border-emerald-500/20";
+        return "bg-emerald-500/10 text-emerald-500 border border-emerald-500/20";
       case "historia":
-        return "bg-blue-500/10 text-blue-400 border border-blue-500/30";
+        return "bg-blue-500/10 text-blue-500 border border-blue-500/30";
       case "eleccion":
-        return "bg-amber-500/10 text-amber-400 border border-amber-500/30";
+        return "bg-amber-500/10 text-amber-500 border border-amber-500/30";
       default:
         return "bg-zinc-800 text-zinc-400 border border-zinc-700";
     }
   };
 
   return (
-    <div id="network-graph-view" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-800 rounded-3xl bg-zinc-900/10 backdrop-blur-md overflow-hidden">
-      <div className="lg:col-span-7 flex flex-col justify-between p-6 bg-zinc-950/40 relative min-h-[420px] lg:min-h-[550px]">
+    <div id="network-graph-view" className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-200 dark:border-zinc-800 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300">
+      <div className="lg:col-span-7 flex flex-col justify-between p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[420px] lg:min-h-[550px] transition-colors duration-300">
         <div>
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-sm font-semibold tracking-wider text-zinc-300 uppercase">
+            <h3 className="text-sm font-semibold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase transition-colors">
               Grafo de Interconexiones de Sitiens
             </h3>
-            <span className="text-xs font-mono text-zinc-500 bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-800/80">
+            <span className="text-xs font-mono text-zinc-500 bg-zinc-200/50 dark:bg-zinc-900/50 px-2 py-0.5 rounded border border-zinc-300/50 dark:border-zinc-800/80 transition-colors">
               Fuerza Activa de Repulsión
             </span>
           </div>
@@ -439,27 +451,27 @@ export default function NetworkGraph() {
           />
         </div>
 
-        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-4 border-t border-zinc-900 text-xs font-mono">
+        <div className="flex flex-wrap gap-x-4 gap-y-2 mt-4 pt-4 border-t border-zinc-200 dark:border-zinc-900 text-xs font-mono transition-colors">
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ring-2 ring-zinc-950" />
+            <span className="w-2.5 h-2.5 rounded-full bg-red-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
             <span className="text-zinc-500">Sintiencia</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block ring-2 ring-zinc-950" />
+            <span className="w-2.5 h-2.5 rounded-full bg-blue-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
             <span className="text-zinc-500">Historia</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block ring-2 ring-zinc-950" />
+            <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
             <span className="text-zinc-500">Clima</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block ring-2 ring-zinc-950" />
+            <span className="w-2.5 h-2.5 rounded-full bg-amber-500 inline-block ring-2 ring-zinc-50 dark:ring-zinc-950" />
             <span className="text-zinc-500">Elección Moral</span>
           </div>
         </div>
       </div>
 
-      <div className="lg:col-span-5 p-6 lg:p-8 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-zinc-800/80 bg-zinc-900/30">
+      <div className="lg:col-span-5 p-6 lg:p-8 flex flex-col justify-between border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300">
         <AnimatePresence mode="wait">
           {selectedNode ? (
             <motion.div
@@ -481,32 +493,41 @@ export default function NetworkGraph() {
                   </div>
                 </div>
 
-                <h2 className="text-2xl font-extrabold text-white tracking-tight border-b border-zinc-800 pb-3">
+                <h2 className="text-2xl font-extrabold text-zinc-900 dark:text-white tracking-tight border-b border-zinc-200 dark:border-zinc-800 pb-3 transition-colors">
                   {selectedNode.title}
                 </h2>
 
-                <p className="text-sm text-zinc-400 font-light leading-relaxed">
+                <p className="text-sm text-zinc-650 dark:text-zinc-400 font-light leading-relaxed transition-colors">
                   {selectedNode.longDesc}
                 </p>
 
                 <div className="space-y-3 pt-2">
-                  <h4 className="text-xs font-semibold tracking-wider text-zinc-300 font-mono flex items-center gap-1.5">
-                    <span className="h-1.5 w-1.5 rounded-full bg-white animate-pulse" />
+                  <h4 className="text-xs font-semibold tracking-wider text-zinc-700 dark:text-zinc-300 font-mono flex items-center gap-1.5 transition-colors">
+                    <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-white animate-pulse" />
                     EVIDENCIAS Y HECHOS FÁCTICOS:
                   </h4>
-                  <ul className="space-y-2 text-xs text-zinc-400 leading-relaxed font-light">
+                  <ul className="space-y-2 text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-light">
                     {selectedNode.scientificFacts.map((fact, i) => (
-                      <li key={i} className="flex items-start gap-2 bg-zinc-950/40 p-3 rounded-xl border border-zinc-800/40">
-                        <span className="text-zinc-600 font-mono font-medium mt-0.5">[{i + 1}]</span>
+                      <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800/40 transition-colors">
+                        <span className="text-zinc-400 dark:text-zinc-650 font-mono font-medium mt-0.5">[{i + 1}]</span>
                         <span>{fact}</span>
                       </li>
                     ))}
                   </ul>
                 </div>
+
+                {selectedNode.citation && (
+                  <div className="p-3 bg-zinc-100/50 dark:bg-zinc-950/30 rounded-xl border border-zinc-200 dark:border-zinc-800/30 text-[10px] font-mono text-zinc-500 dark:text-zinc-500 leading-relaxed transition-colors">
+                    <span className="text-[8px] uppercase tracking-widest text-zinc-650 block mb-1 font-bold">
+                      Fuente / Referencia Académica:
+                    </span>
+                    📖 {selectedNode.citation}
+                  </div>
+                )}
               </div>
 
-              <div className="pt-6 border-t border-zinc-800/60">
-                <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 block mb-2">
+              <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800/60 transition-colors">
+                <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-400 dark:text-zinc-500 block mb-2">
                   Conexiones Lógicas en la Red:
                 </span>
                 <div className="flex flex-wrap gap-2">
@@ -517,7 +538,7 @@ export default function NetworkGraph() {
                       <button
                         key={connId}
                         onClick={() => setSelectedNode(linked)}
-                        className="text-xs px-3 py-1.5 rounded-xl bg-zinc-900 hover:bg-zinc-800 hover:text-white text-zinc-400 border border-zinc-800/80 transition-all flex items-center gap-1.5 hover:border-zinc-700"
+                        className="text-xs px-3 py-1.5 rounded-xl bg-white dark:bg-zinc-900 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-600 dark:text-zinc-400 border border-zinc-200 dark:border-zinc-800/80 transition-all flex items-center gap-1.5 hover:border-zinc-300 dark:hover:border-zinc-700 hover:text-zinc-900 dark:hover:text-white shadow-sm dark:shadow-none cursor-pointer"
                       >
                         <span className={`w-1.5 h-1.5 rounded-full ${
                           linked.category === 'sintiencia' ? 'bg-red-500' :
@@ -532,8 +553,8 @@ export default function NetworkGraph() {
               </div>
             </motion.div>
           ) : (
-            <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 py-16">
-              <HelpCircle className="w-12 h-12 stroke-1 text-zinc-700 mb-2" />
+            <div className="flex flex-col items-center justify-center text-center h-full text-zinc-450 dark:text-zinc-500 py-16">
+              <HelpCircle className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 mb-2 animate-pulse" />
               <p className="text-sm font-light">Selecciona un nodo del grafo para explorar su lógica causal.</p>
             </div>
           )}
