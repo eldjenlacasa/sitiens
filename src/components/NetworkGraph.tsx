@@ -610,7 +610,7 @@ export default function NetworkGraph() {
           : "grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-200 dark:border-zinc-800 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300"
       }
     >
-      <div className={`${isFullscreen ? "lg:w-7/12 flex-1" : "lg:col-span-7"} flex flex-col justify-between p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300 rounded-2xl`}>
+      <div className={`${isFullscreen ? "lg:w-7/12 flex-1" : "lg:col-span-7"} flex flex-col justify-between p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300`}>
         <div>
           <div className="flex items-center justify-between mb-2">
             <h3 className="text-xs font-bold tracking-wider text-zinc-700 dark:text-zinc-300 uppercase transition-colors">
@@ -923,7 +923,7 @@ export default function NetworkGraph() {
       </div>
 
       {/* Details Panel */}
-      <div className={`${isFullscreen ? "lg:w-5/12 max-h-[90vh] overflow-y-auto custom-scrollbar" : "lg:col-span-5 lg:border-l border-zinc-200 dark:border-zinc-800"} hidden lg:flex p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 rounded-2xl`}>
+      <div className={`${isFullscreen ? "lg:w-5/12 max-h-[90vh] overflow-y-auto custom-scrollbar" : "lg:col-span-5 lg:border-l border-zinc-200 dark:border-zinc-800"} hidden lg:flex p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300`}>
         <AnimatePresence mode="wait">
           {selectedNode ? (
             <motion.div

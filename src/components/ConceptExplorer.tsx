@@ -374,7 +374,7 @@ export default function ConceptExplorer() {
             className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full min-h-[600px] border border-zinc-200 dark:border-zinc-800 rounded-3xl bg-white/40 dark:bg-zinc-900/10 backdrop-blur-md overflow-hidden transition-all duration-300"
           >
             {/* Left Section: Cards and Search (lg:col-span-7) */}
-            <div className="lg:col-span-7 p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300 rounded-2xl flex flex-col justify-between space-y-6">
+            <div className="lg:col-span-7 p-6 bg-zinc-50/50 dark:bg-zinc-950/40 relative min-h-[460px] lg:min-h-[550px] transition-colors duration-300 flex flex-col justify-between space-y-6">
               
               <div className="space-y-4 flex-1">
                 {/* Search and Categories row */}
@@ -413,7 +413,7 @@ export default function ConceptExplorer() {
                 </div>
 
                 {/* Concepts list/grid scroll area */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[500px] lg:max-h-[620px] overflow-y-auto pr-1.5 custom-scrollbar">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 max-h-[440px] lg:max-h-[460px] overflow-y-auto pr-1.5 custom-scrollbar">
                   {filteredNodes.length === 0 ? (
                     <div className="col-span-full py-16 text-center space-y-3">
                       <HelpCircle className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
@@ -501,7 +501,7 @@ export default function ConceptExplorer() {
             </div>
 
             {/* Right Section: Sticky Desktop Details Panel (lg:col-span-5) */}
-            <div className="hidden lg:flex lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 rounded-2xl sticky top-24 self-start max-h-[85vh] overflow-y-auto custom-scrollbar">
+            <div className="hidden lg:flex lg:col-span-5 border-t lg:border-t-0 lg:border-l border-zinc-200 dark:border-zinc-800 p-6 lg:p-8 flex-col justify-between bg-zinc-50/30 dark:bg-zinc-900/30 transition-colors duration-300 sticky top-24 self-start max-h-[85vh] overflow-y-auto custom-scrollbar">
               <AnimatePresence mode="wait">
                 {selectedNode ? (
                   <motion.div
