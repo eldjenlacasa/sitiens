@@ -27,6 +27,7 @@ import {
   HelpCircle
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
+import TextRenderer from "./TextRenderer";
 
 // Track metadata for coloring and labels in parallel view
 const TRACK_META: Record<string, { label: string; icon: any; color: string; textClass: string; bgClass: string; borderClass: string; glowClass: string }> = {
@@ -118,113 +119,6 @@ const ERAS: Era[] = [
   { id: "siglo-xxi", name: "El Siglo XXI y el Futuro", period: "Años 2001 al presente", minYear: 2001, maxYear: Infinity }
 ];
 
-// Tooltip component for academic citations (matching ConceptExplorer cohesion)
-interface ReferenceTooltipProps {
-  refDetail: ReferenceDetail;
-  children: React.ReactNode;
-  key?: any;
-}
-
-function ReferenceTooltip({ refDetail, children }: ReferenceTooltipProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleMouseEnter = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setIsOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
-      setIsOpen(false);
-    }, 150);
-  };
-
-  return (
-    <span 
-      className="relative inline-block"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsOpen(!isOpen);
-      }}
-    >
-      {children}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.span
-            initial={{ opacity: 0, y: 5, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 5, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-zinc-900 dark:bg-zinc-950 text-white rounded-xl shadow-xl border border-zinc-800/80 z-50 text-left font-sans block pointer-events-auto cursor-default normal-case tracking-normal whitespace-normal font-normal"
-            onClick={(e) => e.stopPropagation()}
-            onMouseEnter={() => {
-              if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            }}
-            onMouseLeave={handleMouseLeave}
-          >
-            <span className="block text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-bold mb-1">
-              Referencia [{refDetail.id}]
-            </span>
-            <span className="block text-[10.5px] leading-relaxed text-zinc-200 font-light font-sans select-text">
-              {refDetail.citation}
-            </span>
-            {refDetail.url && (
-              <a
-                href={refDetail.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2.5 inline-flex items-center gap-1 text-[9px] font-mono uppercase font-bold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer select-none"
-              >
-                <span>Ver artículo completo</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            )}
-            <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900 dark:border-t-zinc-950" />
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-}
-
-const renderTextWithReferences = (text: string, references?: ReferenceDetail[]) => {
-  if (!references || references.length === 0) return <span>{text}</span>;
-
-  const parts = text.split(/(\[[0-9,\s]+\])/g);
-  
-  return (
-    <>
-      {parts.map((part, idx) => {
-        const match = part.match(/^\[([0-9,\s]+)\]$/);
-        if (match) {
-          const numbers = match[1].split(",").map((num) => num.trim());
-          return (
-            <span key={idx} className="inline-flex gap-0.5">
-              {numbers.map((refId, nIdx) => {
-                const ref = references.find((r) => r.id === refId);
-                if (ref) {
-                  return (
-                    <ReferenceTooltip key={nIdx} refDetail={ref}>
-                      <sup className="text-cyan-500 dark:text-cyan-400 font-bold hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors px-0.5 cursor-pointer select-none">
-                        [{refId}]
-                      </sup>
-                    </ReferenceTooltip>
-                  );
-                }
-                return <sup key={nIdx}>[{refId}]</sup>;
-              })}
-            </span>
-          );
-        }
-        return <span key={idx}>{part}</span>;
-      })}
-    </>
-  );
-};
-
 interface TimelineExplorerProps {
   onRedirectToConcept?: (nodeId: string) => void;
 }
@@ -250,6 +144,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
   // Parallel swimlanes state
   const [mobileActiveTrack, setMobileActiveTrack] = useState<string>("todos");
   const [svgPaths, setSvgPaths] = useState<{ path: string; color: string; fromId: string; toId: string }[]>([]);
+  const [dotPositions, setDotPositions] = useState<Record<string, number>>({});
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -274,10 +169,13 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
       ...prev,
       [id]: !prev[id]
     }));
-    setTimeout(calculateConnections, 250);
+    setTimeout(() => {
+      calculateConnections();
+      calculateDotPositions();
+    }, 250);
   };
 
-  // Focus and scroll to a milestone
+  // Focus and scroll to a milestone card
   const focusMilestone = (id: string) => {
     setSelectedMilestone(allMilestones.find(m => m.id === id) || null);
     setHoveredMilestoneId(id);
@@ -293,7 +191,10 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
         cardElement.classList.remove("ring-2", "ring-purple-500", "dark:ring-purple-400");
       }, 1500);
     }
-    setTimeout(calculateConnections, 250);
+    setTimeout(() => {
+      calculateConnections();
+      calculateDotPositions();
+    }, 250);
   };
 
   // Helper to retrieve causes and effects dynamically based on year order
@@ -317,6 +218,24 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
     });
 
     return { causes, effects };
+  };
+
+  // Calculate vertical coordinate position of each card horizontally aligned (left rail)
+  const calculateDotPositions = () => {
+    if (!containerRef.current || layoutView !== "swimlanes" || window.innerWidth < 1024) return;
+    const cRect = containerRef.current.getBoundingClientRect();
+    const positions: Record<string, number> = {};
+
+    allMilestones.forEach(m => {
+      const cardEl = document.getElementById(`milestone-card-${m.id}`);
+      if (cardEl) {
+        const cardRect = cardEl.getBoundingClientRect();
+        // Calculate Center Y offset relative to timeline container top boundary
+        positions[m.id] = cardRect.top + cardRect.height / 2 - cRect.top;
+      }
+    });
+
+    setDotPositions(positions);
   };
 
   // Calculate coordinates of connection lines relative to main container (for swimlanes)
@@ -349,57 +268,26 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
       const fRect = fromEl.getBoundingClientRect();
       const tRect = toEl.getBoundingClientRect();
 
-      // Find center points relative to timeline wrapper container
-      const fX = fRect.left + fRect.width / 2 - cRect.left;
-      const fY = fRect.top + fRect.height / 2 - cRect.top;
-      const tX = tRect.left + tRect.width / 2 - cRect.left;
-      const tY = tRect.top + tRect.height / 2 - cRect.top;
+      // Connect to the LEFT edge of the card, near the top color strip (y-offset of 24px)
+      const startX = fRect.left - cRect.left;
+      const startY = fRect.top + 24 - cRect.top;
+      
+      const endX = tRect.left - cRect.left;
+      const endY = tRect.top + 24 - cRect.top;
 
-      let startX = fX, startY = fY;
-      let endX = tX, endY = tY;
-
-      // Attachment points on card borders
-      if (Math.abs(fX - tX) > Math.abs(fY - tY)) {
-        // Horizontal connection
-        if (fX < tX) {
-          startX = fRect.right - cRect.left;
-          endX = tRect.left - cRect.left;
-        } else {
-          startX = fRect.left - cRect.left;
-          endX = tRect.right - cRect.left;
-        }
-      } else {
-        // Vertical connection
-        if (fY < tY) {
-          startY = fRect.bottom - cRect.top;
-          endY = tRect.top - cRect.top;
-        } else {
-          startY = fRect.top - cRect.top;
-          endY = tRect.bottom - cRect.top;
-        }
-      }
-
-      // Draw dynamic Bezier paths with controls extending outward
-      const dx = Math.abs(startX - endX);
       const dy = Math.abs(startY - endY);
       
-      let cp1X = startX;
-      let cp1Y = startY;
-      let cp2X = endX;
-      let cp2Y = endY;
-
-      if (dx > dy) {
-        const offset = dx * 0.4;
-        cp1X += (endX > startX) ? offset : -offset;
-        cp2X += (startX > endX) ? offset : -offset;
-      } else {
-        const offset = dy * 0.4;
-        cp1Y += (endY > startY) ? offset : -offset;
-        cp2Y += (startY > endY) ? offset : -offset;
-      }
+      // Control points curve to the LEFT (negative offset)
+      // The farther the distance, the deeper the curve, but cap it to avoid escaping the layout
+      const loopOffset = Math.min(130, 45 + dy * 0.15);
+      
+      const cp1X = startX - loopOffset;
+      const cp1Y = startY;
+      
+      const cp2X = endX - loopOffset;
+      const cp2Y = endY;
 
       // Match connection track color
-      const linkedMilestone = allMilestones.find(m => m.id === toId);
       const fromMilestone = allMilestones.find(m => m.id === activeId);
       const color = TRACK_META[fromMilestone?.trackId || "usos"]?.color || "violet";
 
@@ -417,15 +305,34 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
   // Re-calculate paths on hover, scroll, or resize
   useEffect(() => {
     calculateConnections();
+    calculateDotPositions();
     
-    window.addEventListener("resize", calculateConnections);
-    document.addEventListener("transitionend", calculateConnections);
+    window.addEventListener("resize", () => {
+      calculateConnections();
+      calculateDotPositions();
+    });
+    document.addEventListener("transitionend", () => {
+      calculateConnections();
+      calculateDotPositions();
+    });
+
+    // Multi-stage trigger to guarantee alignment after full React DOM mount
+    const timer1 = setTimeout(() => {
+      calculateConnections();
+      calculateDotPositions();
+    }, 100);
+    const timer2 = setTimeout(() => {
+      calculateConnections();
+      calculateDotPositions();
+    }, 600);
 
     return () => {
       window.removeEventListener("resize", calculateConnections);
       document.removeEventListener("transitionend", calculateConnections);
+      clearTimeout(timer1);
+      clearTimeout(timer2);
     };
-  }, [hoveredMilestoneId, expandedMilestones, layoutView]);
+  }, [hoveredMilestoneId, expandedMilestones, searchQuery, layoutView]);
 
   // Original Detallado view helper
   const activeGroup = TIMELINE_DATA.find((g) => g.id === activeTimelineId)!;
@@ -569,7 +476,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
         
         <div className="flex items-center justify-between relative z-10">
           <div className="w-[45%] text-left">
-            <span className="text-[10px] font-mono tracking-widest text-zinc-400 uppercase block mb-1">HITO INICIAL</span>
+            <span className="text-[10px] font-mono tracking-widest text-zinc-450 uppercase block mb-1">HITO INICIAL</span>
             <div className="font-extrabold text-sm text-zinc-900 dark:text-white leading-tight">{oldest.title}</div>
             <div className="font-mono text-xs text-zinc-500 mt-1 font-semibold">{oldest.yearLabel}</div>
           </div>
@@ -622,26 +529,18 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
             <span className={`text-[10px] tracking-widest font-mono uppercase px-2.5 py-1 rounded-full font-bold ${mColor.badge}`}>
               {milestone.yearLabel}
             </span>
-            <div className="flex items-center gap-1 text-zinc-500 text-xs">
+            <div className="flex items-center gap-1 text-zinc-505 text-xs">
               <Calendar className="w-3.5 h-3.5 text-zinc-400" />
               <span className="font-mono text-[9px] uppercase tracking-wider font-semibold">Registro Histórico</span>
             </div>
           </div>
 
-          <h2 className="text-xl font-extrabold text-zinc-900 dark:text-white tracking-tight border-b border-zinc-200 dark:border-zinc-800 pb-3 transition-colors">
-            {milestone.title}
-          </h2>
 
-          <p className="text-xs sm:text-sm text-zinc-650 dark:text-zinc-400 font-light leading-relaxed transition-colors select-text">
-            {renderTextWithReferences(milestone.longDesc, milestone.references)}
-          </p>
-
-          <div className="space-y-3 pt-2">
             <h4 className="text-[10px] font-bold tracking-wider text-zinc-700 dark:text-zinc-300 font-mono flex items-center gap-1.5 transition-colors">
               <span className="h-1.5 w-1.5 rounded-full bg-zinc-800 dark:bg-white animate-pulse" />
               HECHOS HISTÓRICOS Y CIENTÍFICOS:
             </h4>
-            <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-light select-text">
+            <ul className="space-y-2 text-xs text-zinc-650 dark:text-zinc-400 leading-relaxed font-light select-text">
               {milestone.scientificFacts.map((fact, i) => (
                 <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-800/40 transition-colors">
                   <span className="text-zinc-450 dark:text-zinc-650 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
@@ -711,7 +610,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
         {/* Redirect button to related Concept Explorer node */}
         {relatedNode && onRedirectToConcept && (
           <div className="pt-6 border-t border-zinc-200 dark:border-zinc-800/60 transition-colors">
-            <span className="text-[9px] font-mono tracking-widest uppercase text-zinc-400 dark:text-zinc-500 block mb-2">
+            <span className="text-[9px] font-mono tracking-widest uppercase text-zinc-450 dark:text-zinc-555 block mb-2">
               Concepto Bioético Asociado:
             </span>
             <button
@@ -726,7 +625,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                 }`} />
                 <span>Explorar concepto: {relatedNode.title}</span>
               </div>
-              <ArrowRight className="w-3.5 h-3.5 text-zinc-400 group-hover:translate-x-1 transition-transform" />
+              <ArrowRight className="w-3.5 h-3.5 text-zinc-450 group-hover:translate-x-1 transition-transform" />
             </button>
           </div>
         )}
@@ -765,10 +664,10 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
             className={`px-4 py-2 rounded-xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer ${
               layoutView === "swimlanes"
                 ? "bg-white dark:bg-zinc-800 text-zinc-900 dark:text-white shadow-sm border border-zinc-200/50 dark:border-transparent scale-[1.01]"
-                : "text-zinc-500 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white"
+                : "text-zinc-505 dark:text-zinc-450 hover:text-zinc-900 dark:hover:text-white"
             }`}
           >
-            Vista Paralela (Swimlanes)
+            Línea Temporal Vertical
           </button>
           <button
             onClick={() => setLayoutView("detallado")}
@@ -795,7 +694,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
               className={`flex items-center justify-center gap-2 px-4 py-2 rounded-xl text-xs font-bold tracking-tight transition-all duration-300 cursor-pointer border ${
                 isCompareMode
                   ? "bg-cyan-500/10 border-cyan-500 text-cyan-600 dark:text-cyan-400 shadow-md ring-1 ring-cyan-500/30"
-                  : "bg-white dark:bg-zinc-950 hover:bg-zinc-150/40 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-850 text-zinc-650 dark:text-zinc-400"
+                  : "bg-white dark:bg-zinc-950 hover:bg-zinc-150/40 dark:hover:bg-zinc-900 border-zinc-200 dark:border-zinc-850 text-zinc-655 dark:text-zinc-400"
               }`}
             >
               <GitCompare className="w-4 h-4" />
@@ -818,277 +717,350 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
 
       </div>
 
-      {/* ========================================== */}
-      {/* 1. SWIMLANES LAYOUT VIEW (Parallel Lanes)   */}
-      {/* ========================================== */}
-      {layoutView === "swimlanes" && (
-        <div className="space-y-8 w-full">
-          
-          {/* Interactive Graphical Timeline Ruler Axis */}
-          <div className="bg-white/60 dark:bg-zinc-950/40 border border-zinc-200 dark:border-zinc-900 rounded-3xl p-6 shadow-sm relative overflow-hidden backdrop-blur-md transition-all">
-            <div className="flex items-center justify-between mb-4">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4 text-purple-500 animate-pulse" />
-                <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 uppercase font-mono tracking-wider">
-                  Eje Cronológico Gráfico e Interactivo
-                </span>
-              </div>
-              <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-650 hidden sm:inline">
-                Pasa el cursor o haz clic en los hitos para saltar en el tiempo
-              </span>
-            </div>
+      {layoutView === "swimlanes" && (() => {
+        const swimlaneFilteredMilestones = filteredMilestones.filter(m => 
+          mobileActiveTrack === "todos" || m.trackId === mobileActiveTrack
+        );
 
-            {/* Scrollable Timeline line container */}
-            <div className="relative py-6 overflow-x-auto custom-scrollbar flex items-center min-w-full">
-              <div className="absolute left-0 right-0 h-0.5 bg-zinc-200 dark:bg-zinc-800 z-0 top-1/2 -translate-y-1/2 min-w-[1050px]" />
-              <div className="flex justify-between items-center w-full min-w-[1050px] relative z-10 px-6">
-                {allMilestones.map((m) => {
-                  const isHovered = hoveredMilestoneId === m.id;
-                  const isSelected = selectedMilestone?.id === m.id;
-                  const meta = TRACK_META[m.trackId];
-                  
-                  return (
-                    <div 
-                      key={m.id}
-                      onMouseEnter={() => setHoveredMilestoneId(m.id)}
-                      onMouseLeave={() => !selectedMilestone && setHoveredMilestoneId(null)}
-                      onClick={() => focusMilestone(m.id)}
-                      className="flex flex-col items-center relative cursor-pointer group"
-                    >
-                      <div className={`w-4.5 h-4.5 rounded-full border-2 border-white dark:border-zinc-950 transition-all duration-300 flex items-center justify-center relative ${
-                        isSelected || isHovered ? "scale-125 z-20" : "scale-100 z-10 hover:scale-110"
-                      } ${
-                        m.trackId === "usos" 
-                          ? "bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)]" 
-                          : m.trackId === "etica" 
-                          ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)]" 
-                          : m.trackId === "regulaciones" 
-                          ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)]" 
-                          : "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)]"
-                      }`}
-                      >
-                        {(isSelected || isHovered) && (
-                          <div className="w-1.5 h-1.5 rounded-full bg-white dark:bg-zinc-950 animate-ping" />
-                        )}
-                      </div>
-                      <span className={`text-[9px] font-mono font-bold mt-2.5 tracking-tight transition-colors ${
-                        isSelected || isHovered ? meta.textClass : "text-zinc-450 dark:text-zinc-650"
-                      }`}>
-                        {m.yearLabel.replace("c. ", "").replace(" a.C.", "aC").replace(" d.C.", "")}
-                      </span>
-
-                      {/* Tooltip popup */}
-                      <AnimatePresence>
-                        {isHovered && (
-                          <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: 8 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: 8 }}
-                            className="absolute bottom-full mb-3.5 w-44 p-3 bg-zinc-950 dark:bg-zinc-900 text-white rounded-xl shadow-xl border border-zinc-800 z-30 text-center pointer-events-none"
-                          >
-                            <span className={`block text-[8px] font-mono font-black uppercase tracking-widest mb-1 ${meta.textClass}`}>
-                              {meta.label.split(" ")[0]}
-                            </span>
-                            <h5 className="text-[10px] font-bold leading-tight text-white line-clamp-2 font-heading">
-                              {m.title}
-                            </h5>
-                            <span className="block text-[8px] font-mono text-zinc-400 mt-1">
-                              {m.yearLabel}
-                            </span>
-                          </motion.div>
-                        )}
-                      </AnimatePresence>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          </div>
-
-          {/* Swimlanes dynamic columns grid */}
-          <div 
-            ref={containerRef} 
-            className="relative w-full min-h-[500px]"
-            onMouseLeave={() => !selectedMilestone && setHoveredMilestoneId(null)}
-          >
+        return (
+          <div className="space-y-8 w-full animate-fade-in">
             
-            {/* SVG Connecting bezier curves */}
-            <svg 
-              ref={svgRef}
-              className="absolute inset-0 w-full h-full pointer-events-none z-0 hidden lg:block"
-              style={{ mixBlendMode: "difference" }}
-            >
-              <defs>
-                <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#0284c7" stopOpacity="0.2" />
-                </linearGradient>
-                <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#c084fc" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.2" />
-                </linearGradient>
-                <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#34d399" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#10b981" stopOpacity="0.2" />
-                </linearGradient>
-                <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                  <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.8" />
-                  <stop offset="100%" stopColor="#d97706" stopOpacity="0.2" />
-                </linearGradient>
-              </defs>
-
-              {svgPaths.map((c, i) => (
-                <g key={i}>
-                  <motion.path
-                    d={c.path}
-                    fill="none"
-                    stroke={`url(#${c.color}Grad)`}
-                    strokeWidth="4"
-                    className="opacity-35"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 0.35 }}
-                  />
-                  <motion.path
-                    d={c.path}
-                    fill="none"
-                    stroke={c.color === "sky" ? "#0284c7" : c.color === "purple" ? "#8b5cf6" : c.color === "emerald" ? "#10b981" : "#d97706"}
-                    strokeWidth="1.5"
-                    strokeDasharray="4 2"
-                    className="opacity-90 animate-[dash_10s_linear_infinite]"
-                    initial={{ pathLength: 0 }}
-                    animate={{ pathLength: 1 }}
-                    transition={{ duration: 0.35 }}
-                  />
-                </g>
-              ))}
-            </svg>
-
-            {/* Sticky Column Headers for Swimlanes (Desktop only) */}
-            <div className="hidden lg:grid grid-cols-4 gap-6 sticky top-16 bg-zinc-50/80 dark:bg-zinc-950/80 backdrop-blur-md py-3.5 border-b border-zinc-200/80 dark:border-zinc-900 z-20 mb-6 transition-colors duration-300 rounded-t-xl">
+            {/* 🔘 PERSPECTIVE FILTER PILLS BAR 🔘 */}
+            <div className="flex gap-2 overflow-x-auto pr-4 pb-3 border-b border-zinc-200/50 dark:border-zinc-900/40 custom-scrollbar select-none">
+              <button
+                onClick={() => setMobileActiveTrack("todos")}
+                className={`px-4 py-2 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all cursor-pointer border ${
+                  mobileActiveTrack === "todos"
+                    ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-950 border-transparent shadow-md"
+                    : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-550 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+                }`}
+              >
+                Todas las Perspectivas
+              </button>
               {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
                 const meta = TRACK_META[trackKey];
+                const isSelected = mobileActiveTrack === trackKey;
                 const Icon = meta.icon;
                 return (
-                  <div key={trackKey} className="flex items-center gap-2.5 px-3">
-                    <span className={`p-1.5 rounded-lg ${meta.bgClass} border ${meta.borderClass} flex items-center justify-center`}>
-                      <Icon className={`w-3.5 h-3.5 ${meta.textClass}`} />
-                    </span>
-                    <span className="text-xs font-black text-zinc-800 dark:text-zinc-200 tracking-tight font-mono uppercase">
-                      {meta.label}
-                    </span>
-                  </div>
+                  <button
+                    key={trackKey}
+                    onClick={() => setMobileActiveTrack(trackKey)}
+                    className={`px-4 py-2 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all flex items-center gap-2 cursor-pointer border ${
+                      isSelected
+                        ? `${
+                            trackKey === "usos" ? "bg-sky-500 text-white border-transparent shadow-md" :
+                            trackKey === "etica" ? "bg-purple-500 text-white border-transparent shadow-md" :
+                            trackKey === "regulaciones" ? "bg-emerald-500 text-white border-transparent shadow-md" :
+                            "bg-amber-500 text-white border-transparent shadow-md"
+                          }`
+                        : "bg-white dark:bg-zinc-900 border-zinc-200 dark:border-zinc-800 text-zinc-600 dark:text-zinc-400 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+                    }`}
+                  >
+                    <Icon className="w-3.5 h-3.5" />
+                    {meta.label}
+                  </button>
                 );
               })}
             </div>
 
-            {/* Desktop grid era by era */}
-            <div className="hidden lg:block space-y-16 relative z-10">
-              {ERAS.map((era) => {
-                const eraMilestones = filteredMilestones.filter(m => m.year >= era.minYear && m.year <= era.maxYear);
-                if (eraMilestones.length === 0 && searchQuery) return null;
+            {/* Main layout grid containing left vertical index minimap and right chronological timeline stream */}
+            <div 
+              ref={containerRef} 
+              className="grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch w-full relative min-h-[500px]"
+              onMouseLeave={() => !selectedMilestone && setHoveredMilestoneId(null)}
+            >
+              
+              {/* SVG Connecting bezier curves (spans across the timeline stream) */}
+              <svg 
+                ref={svgRef}
+                className="absolute inset-0 w-full h-full pointer-events-none z-0 hidden lg:block"
+                style={{ mixBlendMode: "difference" }}
+              >
+                <defs>
+                  <linearGradient id="skyGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#0284c7" stopOpacity="0.2" />
+                  </linearGradient>
+                  <linearGradient id="purpleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#c084fc" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#8b5cf6" stopOpacity="0.2" />
+                  </linearGradient>
+                  <linearGradient id="emeraldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#34d399" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#10b981" stopOpacity="0.2" />
+                  </linearGradient>
+                  <linearGradient id="amberGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                    <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.8" />
+                    <stop offset="100%" stopColor="#d97706" stopOpacity="0.2" />
+                  </linearGradient>
+                </defs>
 
-                return (
-                  <div key={era.id} className="space-y-6">
-                    <div className="flex items-center gap-4 border-b border-zinc-200/60 dark:border-zinc-900/60 pb-3">
-                      <div className="w-2.5 h-2.5 rounded-full bg-purple-500/70 animate-pulse" />
-                      <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-100 tracking-wider font-heading uppercase">
-                        {era.name}
-                      </h3>
-                      <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-600 bg-zinc-100 dark:bg-zinc-950 p-1 px-2.5 rounded-md border border-zinc-200/40 dark:border-zinc-900/40 ml-auto">
-                        {era.period}
-                      </span>
-                    </div>
+                {svgPaths.map((c, i) => (
+                  <g key={i}>
+                    <motion.path
+                      d={c.path}
+                      fill="none"
+                      stroke={`url(#${c.color}Grad)`}
+                      strokeWidth="4"
+                      className="opacity-30"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.35 }}
+                    />
+                    <motion.path
+                      d={c.path}
+                      fill="none"
+                      stroke={c.color === "sky" ? "#0284c7" : c.color === "purple" ? "#8b5cf6" : c.color === "emerald" ? "#10b981" : "#d97706"}
+                      strokeWidth="1.5"
+                      strokeDasharray="4 2"
+                      className="opacity-80 animate-[dash_10s_linear_infinite]"
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 0.35 }}
+                    />
+                  </g>
+                ))}
+              </svg>
 
-                    <div className="grid grid-cols-4 gap-6 items-stretch">
-                      {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
-                        const trackMilestones = eraMilestones.filter(m => m.trackId === trackKey);
+              {/* 📍 STICKY NAVIGATION MINIMAP 📍 */}
+              <div className="hidden lg:block lg:col-span-3 sticky top-24 self-start bg-zinc-50/50 dark:bg-zinc-900/10 backdrop-blur-md p-6 rounded-3xl border border-zinc-200 dark:border-zinc-900/60 transition-colors duration-300">
+                <span className="text-[10px] font-mono font-black tracking-widest text-zinc-455 dark:text-zinc-500 uppercase block mb-4">
+                  ÍNDICE CRONOLÓGICO
+                </span>
+                <div className="space-y-6 relative pl-4 border-l border-zinc-200 dark:border-zinc-800">
+                  {ERAS.map((era) => {
+                    const eraMilestones = swimlaneFilteredMilestones.filter(m => m.year >= era.minYear && m.year <= era.maxYear);
+                    if (eraMilestones.length === 0 && searchQuery) return null;
+
+                    return (
+                      <div key={era.id} className="group relative">
+                        <div className="absolute -left-[21px] top-1.5 w-2.5 h-2.5 rounded-full border border-white dark:border-zinc-950 bg-zinc-350 dark:bg-zinc-700 transition-all group-hover:bg-purple-500 group-hover:scale-125" />
                         
-                        return (
-                          <div 
-                            key={trackKey} 
-                            className="flex flex-col gap-4 min-h-[140px] p-2 rounded-2xl bg-zinc-50/20 dark:bg-zinc-950/5 border border-dashed border-zinc-200/40 dark:border-zinc-900/40 transition-colors hover:bg-zinc-100/10 dark:hover:bg-zinc-950/10"
-                          >
-                            {trackMilestones.map((milestone) => {
-                              const meta = TRACK_META[milestone.trackId];
-                              const isHovered = hoveredMilestoneId === milestone.id;
-                              const isSelected = selectedMilestone?.id === milestone.id;
-                              const isLinked = svgPaths.some(p => p.toId === milestone.id);
-                              const isExpanded = !!expandedMilestones[milestone.id];
+                        <button
+                          onClick={() => {
+                            const el = document.getElementById(`era-section-${era.id}`);
+                            if (el) {
+                              el.scrollIntoView({ behavior: "smooth", block: "start" });
+                            }
+                          }}
+                          className="text-left cursor-pointer select-none outline-none block"
+                        >
+                          <span className="text-xs font-bold text-zinc-800 dark:text-zinc-200 group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors block">
+                            {era.name}
+                          </span>
+                          <span className="text-[9px] font-mono text-zinc-455 dark:text-zinc-500 block mt-0.5">
+                            {era.period}
+                          </span>
+                        </button>
 
-                              return (
+                        <div className="mt-2.5 flex flex-wrap gap-1.5 pl-1">
+                          {eraMilestones.map(m => {
+                            const isSelected = selectedMilestone?.id === m.id;
+                            const isHovered = hoveredMilestoneId === m.id;
+                            return (
+                              <div
+                                key={m.id}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  focusMilestone(m.id);
+                                }}
+                                title={`${m.title} (${m.yearLabel})`}
+                                className={`w-2 h-2 rounded-full cursor-pointer transition-all ${
+                                  isSelected || isHovered
+                                    ? `${
+                                        m.trackId === "usos" ? "bg-sky-500 ring-2 ring-sky-500/30 scale-125" :
+                                        m.trackId === "etica" ? "bg-purple-500 ring-2 ring-purple-500/30 scale-125" :
+                                        m.trackId === "regulaciones" ? "bg-emerald-500 ring-2 ring-emerald-500/30 scale-125" :
+                                        "bg-amber-500 ring-2 ring-amber-500/30 scale-125"
+                                      }`
+                                    : "bg-zinc-250 dark:bg-zinc-800 hover:scale-110 hover:bg-purple-500"
+                                }`}
+                              />
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Timeline Stream (Desktop col-span-9, full height continuous rail) */}
+              <div className="lg:col-span-9 space-y-12 relative z-10">
+                
+                {swimlaneFilteredMilestones.length === 0 ? (
+                  <div className="py-24 text-center space-y-3">
+                    <Clock className="w-12 h-12 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
+                    <div className="space-y-1">
+                      <h4 className="text-sm font-semibold text-zinc-900 dark:text-white">Sin hitos coincidentes</h4>
+                      <p className="text-xs text-zinc-505">Intenta buscar con otros términos o cambia la perspectiva de filtrado.</p>
+                    </div>
+                  </div>
+                ) : (
+                  ERAS.map((era) => {
+                    const eraMilestones = swimlaneFilteredMilestones.filter(m => m.year >= era.minYear && m.year <= era.maxYear);
+                    if (eraMilestones.length === 0) return null;
+
+                    return (
+                      <React.Fragment key={era.id}>
+                        
+                        {/* 🌟 Era Separator Header Row 🌟 */}
+                        <div 
+                          id={`era-section-${era.id}`}
+                          className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch relative"
+                        >
+                          <div className="hidden lg:block col-span-3" />
+                          <div className="hidden lg:flex col-span-1 justify-center relative">
+                            <div className="absolute top-0 bottom-0 w-0.5 bg-zinc-200 dark:bg-zinc-800 z-0" />
+                          </div>
+                          <div className="col-span-1 lg:col-span-8 py-3 border-b border-zinc-250/60 dark:border-zinc-900/60 transition-colors">
+                            <div className="flex items-center gap-4">
+                              <div className="w-3 h-3 rounded-full bg-purple-500/70 animate-pulse shadow-[0_0_8px_rgba(168,85,247,0.4)]" />
+                              <h3 className="text-sm font-black text-zinc-800 dark:text-zinc-100 tracking-wider font-heading uppercase">
+                                {era.name}
+                              </h3>
+                              <span className="text-[10px] font-mono text-zinc-400 dark:text-zinc-650 bg-zinc-100 dark:bg-zinc-950 p-1.5 px-2.5 rounded-lg border border-zinc-250/40 dark:border-zinc-900/40 ml-auto">
+                                {era.period}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* 🌟 Milestones Flow in this Era 🌟 */}
+                        {eraMilestones.map((milestone) => {
+                          const meta = TRACK_META[milestone.trackId];
+                          const isSelected = selectedMilestone?.id === milestone.id;
+                          const isHovered = hoveredMilestoneId === milestone.id;
+                          const isLinked = svgPaths.some(p => p.toId === milestone.id || p.fromId === milestone.id);
+                          const isExpanded = !!expandedMilestones[milestone.id];
+
+                          return (
+                            <div 
+                              key={milestone.id}
+                              id={`milestone-row-${milestone.id}`}
+                              className="grid grid-cols-1 lg:grid-cols-12 gap-4 items-stretch relative"
+                              onMouseEnter={() => {
+                                setHoveredMilestoneId(milestone.id);
+                              }}
+                            >
+                              
+                              {/* Left Column: Date & Perspective (Desktop only) */}
+                              <div className="hidden lg:flex col-span-3 flex-col items-end pr-8 justify-start pt-5 relative select-none">
+                                <span className={`text-xs font-mono font-black tracking-tighter transition-colors select-none ${
+                                  isSelected || isHovered ? meta.textClass : "text-zinc-400 dark:text-zinc-655"
+                                }`}>
+                                  {milestone.yearLabel}
+                                </span>
+                                <span className="text-[9px] font-mono font-semibold text-zinc-455 dark:text-zinc-500 uppercase tracking-widest mt-1">
+                                  {meta.label.split(" ")[0]}
+                                </span>
+                              </div>
+
+                              {/* Center Column: Spine segment and Node dot (Desktop only) */}
+                              <div className="hidden lg:flex col-span-1 justify-center relative">
+                                <div className="absolute top-0 bottom-0 w-0.5 bg-zinc-200 dark:bg-zinc-800 z-0" />
                                 <div
-                                  key={milestone.id}
+                                  id={`milestone-dot-${milestone.id}`}
+                                  onClick={() => focusMilestone(milestone.id)}
+                                  className={`w-6 h-6 rounded-full border-4 border-zinc-50 dark:border-zinc-955 transition-all duration-500 flex items-center justify-center relative z-10 cursor-pointer mt-4 ${
+                                    isSelected || isHovered ? "scale-125 shadow-xl" : "scale-100 hover:scale-110"
+                                  } ${
+                                    milestone.trackId === "usos" 
+                                      ? "bg-sky-500 shadow-[0_0_12px_rgba(14,165,233,0.6)]" 
+                                      : milestone.trackId === "etica" 
+                                      ? "bg-purple-500 shadow-[0_0_12px_rgba(168,85,247,0.6)]" 
+                                      : milestone.trackId === "regulaciones" 
+                                      ? "bg-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.6)]" 
+                                      : "bg-amber-500 shadow-[0_0_12px_rgba(245,158,11,0.6)]"
+                                  }`}
+                                >
+                                  <meta.icon className="w-2.5 h-2.5 text-white" />
+                                </div>
+                              </div>
+
+                              {/* Right Column: Spacious detailed card (responsive border on mobile) */}
+                              <div className="col-span-1 lg:col-span-8 relative pl-6 lg:pl-0 border-l border-zinc-200 dark:border-zinc-850 lg:border-l-0 ml-4 lg:ml-0">
+                                
+                                {/* Mobile-only dot on left border */}
+                                <div className={`lg:hidden absolute -left-[5px] top-6.5 w-2.5 h-2.5 rounded-full border border-white dark:border-zinc-950 transition-all ${
+                                  isSelected || isHovered
+                                    ? `${
+                                        milestone.trackId === "usos" ? "bg-sky-500 shadow-[0_0_8px_rgba(14,165,233,0.5)] scale-125" :
+                                        milestone.trackId === "etica" ? "bg-purple-500 shadow-[0_0_8px_rgba(168,85,247,0.5)] scale-125" :
+                                        milestone.trackId === "regulaciones" ? "bg-emerald-500 shadow-[0_0_8px_rgba(16,185,129,0.5)] scale-125" :
+                                        "bg-amber-500 shadow-[0_0_8px_rgba(245,158,11,0.5)] scale-125"
+                                      }`
+                                    : "bg-zinc-300 dark:bg-zinc-750"
+                                }`} />
+
+                                {/* Card element */}
+                                <div
                                   id={`milestone-card-${milestone.id}`}
-                                  onMouseEnter={() => {
-                                    setHoveredMilestoneId(milestone.id);
-                                    if (!selectedMilestone) {
-                                      setSelectedMilestone(milestone);
-                                    }
-                                  }}
                                   onClick={() => {
                                     setSelectedMilestone(milestone);
                                     setHoveredMilestoneId(milestone.id);
                                   }}
-                                  className={`p-4.5 rounded-xl transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-3 relative group select-none ${
+                                  className={`p-5 rounded-2xl transition-all duration-300 cursor-pointer flex flex-col justify-between space-y-4 relative group select-none ${
                                     isSelected || isHovered
-                                      ? "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 shadow-lg scale-[1.01]"
+                                      ? "bg-white dark:bg-zinc-900 border-zinc-300 dark:border-zinc-800 shadow-xl scale-[1.005]"
                                       : isLinked
-                                      ? "bg-white/95 dark:bg-zinc-900/95 border-purple-400/60 dark:border-purple-900/50 shadow-sm scale-[0.99]"
+                                      ? "bg-white/95 dark:bg-zinc-900/95 border-purple-400/50 dark:border-purple-900/40 shadow-sm scale-[0.99]"
                                       : "bg-white/40 dark:bg-zinc-900/20 hover:bg-white/80 dark:hover:bg-zinc-900/50 border-zinc-200 dark:border-zinc-900/50 hover:border-zinc-300 dark:hover:border-zinc-800"
                                   } border ${meta.glowClass}`}
                                 >
-                                  
-                                  <div className={`absolute top-0 left-0 right-0 h-1 rounded-t-xl bg-gradient-to-r ${
-                                    milestone.trackId === "usos" 
-                                      ? "from-sky-400 to-sky-600" 
-                                      : milestone.trackId === "etica" 
-                                      ? "from-purple-400 to-violet-650" 
-                                      : milestone.trackId === "regulaciones" 
-                                      ? "from-emerald-400 to-emerald-600" 
-                                      : "from-amber-400 to-amber-600"
+                                  {/* Highlight top border gradient matching track */}
+                                  <div className={`absolute top-0 left-0 right-0 h-1.5 rounded-t-2xl bg-gradient-to-r ${
+                                    milestone.trackId === "usos" ? "from-sky-400 to-sky-600" :
+                                    milestone.trackId === "etica" ? "from-purple-400 to-violet-650" :
+                                    milestone.trackId === "regulaciones" ? "from-emerald-400 to-emerald-600" :
+                                    "from-amber-400 to-amber-600"
                                   }`} />
 
-                                  <div className="space-y-1">
+                                  <div className="space-y-2">
                                     <div className="flex items-center justify-between">
-                                      <span className={`text-[10px] font-black font-mono tracking-widest uppercase ${meta.textClass}`}>
-                                        {milestone.yearLabel}
+                                      <span className={`text-[10px] font-black font-mono tracking-widest uppercase flex items-center gap-1.5 ${meta.textClass}`}>
+                                        <meta.icon className="w-3.5 h-3.5" />
+                                        {meta.label}
                                       </span>
-                                      {isLinked && (
-                                        <span className="p-0.5 px-1.5 rounded bg-purple-500/10 border border-purple-500/20 text-[8px] font-mono text-purple-600 dark:text-purple-400 font-bold uppercase animate-pulse">
-                                          VINCULADO
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-[10px] font-bold text-zinc-500 dark:text-zinc-400 font-mono bg-zinc-150/40 dark:bg-zinc-950/40 p-1 px-2.5 rounded-lg border border-zinc-200/50 dark:border-zinc-850">
+                                          {milestone.yearLabel}
                                         </span>
-                                      )}
+                                        {isLinked && (
+                                          <span className="p-1 px-1.5 rounded bg-purple-500/10 border border-purple-500/20 text-[8px] font-mono text-purple-600 dark:text-purple-400 font-bold uppercase animate-pulse">
+                                            VINCULADO
+                                          </span>
+                                        )}
+                                      </div>
                                     </div>
-                                    <h4 className="text-xs sm:text-sm font-black tracking-tight text-zinc-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-tight font-heading">
+                                    <h4 className="text-sm sm:text-base font-black tracking-tight text-zinc-900 dark:text-white group-hover:text-purple-600 dark:group-hover:text-purple-400 transition-colors leading-snug font-heading">
                                       {milestone.title}
                                     </h4>
                                   </div>
 
-                                  <p className="text-[11px] font-light text-zinc-500 dark:text-zinc-400 leading-relaxed">
+                                  <p className="text-xs font-light text-zinc-550 dark:text-zinc-400 leading-relaxed">
                                     {milestone.shortDesc}
                                   </p>
 
+                                  {/* Expandable deconstruction block */}
                                   {isExpanded && (
                                     <motion.div 
                                       initial={{ opacity: 0, height: 0 }}
                                       animate={{ opacity: 1, height: "auto" }}
                                       exit={{ opacity: 0, height: 0 }}
-                                      className="space-y-4 pt-3 border-t border-zinc-100 dark:border-zinc-900 text-[11px] leading-relaxed select-text"
+                                      className="space-y-4 pt-4 border-t border-zinc-100 dark:border-zinc-900 text-xs leading-relaxed select-text font-sans"
                                     >
-                                      {/* Rich Text with Tooltip Citations */}
-                                      <div className="text-zinc-650 dark:text-zinc-350 font-light leading-relaxed whitespace-pre-line bg-zinc-50/50 dark:bg-zinc-950/20 p-2.5 rounded-lg border border-zinc-200/30 dark:border-zinc-900/30 font-sans">
+                                      <div className="text-zinc-655 dark:text-zinc-350 font-light leading-relaxed whitespace-pre-line bg-zinc-50/50 dark:bg-zinc-950/20 p-3.5 rounded-xl border border-zinc-200/30 dark:border-zinc-900/30">
                                         {renderTextWithReferences(milestone.longDesc, milestone.references)}
                                       </div>
 
-                                      {/* Evidence list with tooltips too */}
                                       <div className="space-y-2">
-                                        <span className="text-[9px] font-bold tracking-wider text-zinc-450 uppercase block font-mono">
+                                        <span className="text-[9.5px] font-bold tracking-wider text-zinc-455 dark:text-zinc-300 uppercase block font-mono">
                                           EVIDENCIAS Y HECHOS DECONSTRUIDOS:
                                         </span>
-                                        <ul className="space-y-2 list-none pl-0">
+                                        <ul className="space-y-2.5 list-none pl-0">
                                           {milestone.scientificFacts.map((fact, index) => (
-                                            <li key={index} className="flex gap-2 p-2.5 rounded-xl border border-zinc-200/50 dark:border-zinc-800/40 bg-white/30 dark:bg-zinc-950/10 font-light font-sans text-zinc-600 dark:text-zinc-400">
+                                            <li key={index} className="flex gap-2.5 p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-800/40 bg-white/30 dark:bg-zinc-955/10 font-light text-zinc-600 dark:text-zinc-400">
                                               <span className="text-purple-500 font-mono font-bold select-none">[{index + 1}]</span>
                                               <span>{renderTextWithReferences(fact, milestone.references)}</span>
                                             </li>
@@ -1096,12 +1068,12 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                         </ul>
                                       </div>
 
-                                      {/* Causal links */}
+                                      {/* Causal paths links */}
                                       {(() => {
                                         const { causes, effects } = getCausality(milestone.id);
                                         if (causes.length === 0 && effects.length === 0) return null;
                                         return (
-                                          <div className="space-y-2 pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                          <div className="space-y-2 pt-3 border-t border-zinc-100/50 dark:border-zinc-900/50">
                                             <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block font-mono">
                                               RELACIONES DE CAUSALIDAD HISTÓRICA:
                                             </span>
@@ -1109,51 +1081,51 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                               <div 
                                                 key={c.id} 
                                                 onClick={(e) => { e.stopPropagation(); focusMilestone(c.id); }}
-                                                className="flex items-center justify-between p-2 rounded bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-300 group/link transition-all font-mono"
+                                                className="flex items-center justify-between p-2.5 rounded-xl bg-amber-500/5 hover:bg-amber-500/10 border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-300 group/link transition-all font-mono"
                                               >
-                                                <span className="flex items-center gap-1">
-                                                  <ArrowLeft className="w-3 h-3 group-hover/link:-translate-x-0.5 transition-transform" />
+                                                <span className="flex items-center gap-1.5">
+                                                  <ArrowLeft className="w-3.5 h-3.5 group-hover/link:-translate-x-0.5 transition-transform" />
                                                   Causa: {c.yearLabel}
                                                 </span>
-                                                <span className="font-bold truncate max-w-[150px]">{c.title}</span>
+                                                <span className="font-bold truncate max-w-[200px]">{c.title}</span>
                                               </div>
                                             ))}
                                             {effects.map(ef => (
                                               <div 
                                                 key={ef.id} 
                                                 onClick={(e) => { e.stopPropagation(); focusMilestone(ef.id); }}
-                                                className="flex items-center justify-between p-2 rounded bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-300 group/link transition-all font-mono"
+                                                className="flex items-center justify-between p-2.5 rounded-xl bg-emerald-500/5 hover:bg-emerald-500/10 border border-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-355 group/link transition-all font-mono"
                                               >
-                                                <span className="flex items-center gap-1">
+                                                <span className="flex items-center gap-1.5">
                                                   Efecto: {ef.yearLabel}
-                                                  <ArrowRight className="w-3 h-3 group-hover/link:translate-x-0.5 transition-transform" />
+                                                  <ArrowRight className="w-3.5 h-3.5 group-hover/link:translate-x-0.5 transition-transform" />
                                                 </span>
-                                                <span className="font-bold truncate max-w-[150px]">{ef.title}</span>
+                                                <span className="font-bold truncate max-w-[200px]">{ef.title}</span>
                                               </div>
                                             ))}
                                           </div>
                                         );
                                       })()}
 
-                                      {/* Academic Bibliographies toggle */}
+                                      {/* APA citation references */}
                                       {milestone.references && milestone.references.length > 0 && (
-                                        <div className="space-y-1.5 pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
-                                          <div className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-zinc-400 uppercase font-mono">
+                                        <div className="space-y-2 pt-3 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                          <div className="flex items-center gap-1.5 text-[9px] font-bold tracking-wider text-zinc-400 uppercase font-mono">
                                             <BookOpen className="w-3.5 h-3.5 text-zinc-400" />
-                                            <span>BIBLIOGRAFÍA APA</span>
+                                            <span>BIBLIOGRAFÍA APA Y REFERENCIAS</span>
                                           </div>
-                                          <div className="space-y-1 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg border border-zinc-200/50 dark:border-zinc-900/50">
+                                          <div className="space-y-1.5 bg-zinc-50 dark:bg-zinc-955 p-3 rounded-xl border border-zinc-200/50 dark:border-zinc-900/50">
                                             {milestone.references.map((ref) => (
-                                              <div key={ref.id} className="text-[10px] text-zinc-500 dark:text-zinc-500 leading-normal flex gap-1 items-start">
+                                              <div key={ref.id} className="text-[10.5px] text-zinc-505 dark:text-zinc-550 leading-normal flex gap-2 items-start">
                                                 <span className="text-purple-500 font-bold font-mono">[{ref.id}]</span>
-                                                <div className="flex-1 font-sans leading-tight select-text">
+                                                <div className="flex-1 leading-tight select-text">
                                                   {ref.citation}
                                                   {ref.url && (
                                                     <a 
                                                       href={ref.url} 
                                                       target="_blank" 
                                                       rel="noopener noreferrer" 
-                                                      className="inline-flex items-center gap-0.5 text-purple-600 dark:text-purple-400 hover:underline ml-1 font-bold font-mono text-[9px]"
+                                                      className="inline-flex items-center gap-0.5 text-purple-600 dark:text-purple-400 hover:underline ml-1.5 font-bold font-mono text-[9.5px]"
                                                     >
                                                       Fuente <ExternalLink className="w-2.5 h-2.5" />
                                                     </a>
@@ -1165,15 +1137,15 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                         </div>
                                       )}
 
-                                      {/* Concept Explorer Redirect in parallel card */}
+                                      {/* Concept explorer redirects */}
                                       {milestone.relatedNodeId && onRedirectToConcept && (
-                                        <div className="pt-2 border-t border-zinc-100/50 dark:border-zinc-900/50">
+                                        <div className="pt-3 border-t border-zinc-100/50 dark:border-zinc-900/50">
                                           <button
                                             onClick={(e) => { e.stopPropagation(); onRedirectToConcept(milestone.relatedNodeId!); }}
-                                            className="w-full flex items-center justify-between text-[10px] p-2 rounded bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-950 dark:hover:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-400 font-bold transition-all"
+                                            className="w-full flex items-center justify-between text-xs p-3 rounded-xl bg-zinc-105 hover:bg-zinc-200 dark:bg-zinc-955 dark:hover:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 text-zinc-700 dark:text-zinc-400 font-bold transition-all"
                                           >
                                             <span>Explorar Concepto Sintiens Asociado</span>
-                                            <ArrowRight className="w-3 h-3 text-zinc-450" />
+                                            <ArrowRight className="w-3.5 h-3.5 text-zinc-450" />
                                           </button>
                                         </div>
                                       )}
@@ -1181,204 +1153,33 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                                     </motion.div>
                                   )}
 
+                                  {/* Deconstruction toggle */}
                                   <div 
                                     onClick={(e) => { e.stopPropagation(); toggleExpand(milestone.id); }}
-                                    className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-900 text-[10px] font-mono text-zinc-400 dark:text-zinc-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
+                                    className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-900 text-[10.5px] font-mono text-zinc-400 dark:text-zinc-500 hover:text-purple-600 dark:hover:text-purple-400 transition-colors"
                                   >
                                     <span>
                                       {isExpanded ? "Ocultar deconstrucción" : "Deconstruir evidencias"}
                                     </span>
                                     <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
                                   </div>
-                                </div>
-                              );
-                            })}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
 
-            {/* Mobile Swimlanes representation (Merged Chronological) */}
-            <div className="lg:hidden space-y-6">
-              <div className="sticky top-16 bg-zinc-50/80 dark:bg-zinc-950/80 backdrop-blur-md py-3 border-b border-zinc-200/50 dark:border-zinc-900/50 z-20 flex gap-2 overflow-x-auto pr-4 custom-scrollbar">
-                <button
-                  onClick={() => setMobileActiveTrack("todos")}
-                  className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all cursor-pointer ${
-                    mobileActiveTrack === "todos"
-                      ? "bg-zinc-900 dark:bg-white text-white dark:text-zinc-950"
-                      : "bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-900 text-zinc-505 dark:text-zinc-400"
-                  }`}
-                >
-                  Todos
-                </button>
-                {(Object.keys(TRACK_META) as Array<keyof typeof TRACK_META>).map(trackKey => {
-                  const meta = TRACK_META[trackKey];
-                  return (
-                    <button
-                      key={trackKey}
-                      onClick={() => setMobileActiveTrack(trackKey)}
-                      className={`px-3 py-1.5 rounded-full text-xs font-mono font-bold tracking-tight whitespace-nowrap transition-all flex items-center gap-1.5 cursor-pointer border ${
-                        mobileActiveTrack === trackKey ? "bg-purple-500 text-white border-purple-500" : "bg-white dark:bg-zinc-900 border-zinc-250 dark:border-zinc-900 text-zinc-550 dark:text-zinc-400"
-                      }`}
-                    >
-                      <meta.icon className="w-3.5 h-3.5" />
-                      {meta.label.split(" ")[0]}
-                    </button>
-                  );
-                })}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+
               </div>
 
-              {(() => {
-                const mobileFilteredMilestones = filteredMilestones.filter(m => 
-                  mobileActiveTrack === "todos" || m.trackId === mobileActiveTrack
-                );
-
-                if (mobileFilteredMilestones.length === 0) {
-                  return (
-                    <div className="py-16 text-center space-y-3">
-                      <HelpCircle className="w-10 h-10 stroke-1 text-zinc-400 dark:text-zinc-700 mx-auto animate-pulse" />
-                      <p className="text-zinc-400 dark:text-zinc-650 text-xs font-mono">
-                        No se encontraron hitos para los filtros seleccionados
-                      </p>
-                    </div>
-                  );
-                }
-
-                return (
-                  <div className="relative border-l-2 border-zinc-200 dark:border-zinc-900 ml-3 pl-5 space-y-6">
-                    {mobileFilteredMilestones.map((milestone) => {
-                      const meta = TRACK_META[milestone.trackId];
-                      const isExpanded = !!expandedMilestones[milestone.id];
-
-                      return (
-                        <div key={milestone.id} className="relative">
-                          <div className={`absolute -left-[27px] top-1.5 w-3.5 h-3.5 rounded-full border-2 border-white dark:border-zinc-950 ${
-                            milestone.trackId === "usos" ? "bg-sky-500" :
-                            milestone.trackId === "etica" ? "bg-purple-500" :
-                            milestone.trackId === "regulaciones" ? "bg-emerald-500" : "bg-amber-500"
-                          }`} />
-
-                          <div className={`p-4 rounded-xl bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-850 space-y-3 ${meta.glowClass}`}>
-                            <div className="flex items-center justify-between">
-                              <span className={`text-[10px] font-black font-mono tracking-widest uppercase ${meta.textClass}`}>
-                                {milestone.yearLabel}
-                              </span>
-                              <span className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500">
-                                {meta.label.split(" ")[0]}
-                              </span>
-                            </div>
-
-                            <h4 className="text-sm font-black tracking-tight text-zinc-900 dark:text-white leading-tight font-heading">
-                              {milestone.title}
-                            </h4>
-
-                            <p className="text-[11px] font-light text-zinc-500 dark:text-zinc-400 leading-relaxed">
-                              {milestone.shortDesc}
-                            </p>
-
-                            {isExpanded && (
-                              <motion.div 
-                                initial={{ opacity: 0, height: 0 }}
-                                animate={{ opacity: 1, height: "auto" }}
-                                exit={{ opacity: 0, height: 0 }}
-                                className="space-y-3 pt-2 border-t border-zinc-100 dark:border-zinc-850 text-[11px] leading-relaxed select-text"
-                              >
-                                <div className="text-zinc-650 dark:text-zinc-350 font-light leading-relaxed bg-zinc-50/50 dark:bg-zinc-950/20 p-2.5 rounded-lg border border-zinc-200/30 dark:border-zinc-800/30 font-sans">
-                                  {renderTextWithReferences(milestone.longDesc, milestone.references)}
-                                </div>
-
-                                <div className="space-y-2">
-                                  <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block font-mono">
-                                    EVIDENCIAS DECONSTRUIDAS:
-                                  </span>
-                                  <ul className="space-y-1.5 list-none pl-0">
-                                    {milestone.scientificFacts.map((fact, index) => (
-                                      <li key={index} className="flex gap-1.5 text-zinc-500 dark:text-zinc-400 font-light font-sans">
-                                        <span className="text-purple-500 font-mono text-[9px] mt-0.5">●</span>
-                                        <span>{renderTextWithReferences(fact, milestone.references)}</span>
-                                      </li>
-                                    ))}
-                                  </ul>
-                                </div>
-
-                                {(() => {
-                                  const { causes, effects } = getCausality(milestone.id);
-                                  if (causes.length === 0 && effects.length === 0) return null;
-                                  return (
-                                    <div className="space-y-2 pt-1.5 border-t border-zinc-100/50 dark:border-zinc-850 font-mono">
-                                      <span className="text-[9px] font-bold tracking-wider text-zinc-400 uppercase block">
-                                        VÍNCULOS CAUSALES:
-                                      </span>
-                                      {causes.map(c => (
-                                        <div 
-                                          key={c.id} 
-                                          onClick={() => focusMilestone(c.id)}
-                                          className="flex items-center justify-between p-1.5 rounded bg-amber-500/5 border border-amber-500/10 text-[10px] text-amber-700 dark:text-amber-400"
-                                        >
-                                          <span>← Causa: {c.yearLabel}</span>
-                                          <span className="font-bold truncate max-w-[140px]">{c.title}</span>
-                                        </div>
-                                      ))}
-                                      {effects.map(ef => (
-                                        <div 
-                                          key={ef.id} 
-                                          onClick={() => focusMilestone(ef.id)}
-                                          className="flex items-center justify-between p-1.5 rounded bg-emerald-500/5 border border-emerald-500/10 text-[10px] text-emerald-700 dark:text-emerald-400"
-                                        >
-                                          <span>Efecto: {ef.yearLabel} →</span>
-                                          <span className="font-bold truncate max-w-[140px]">{ef.title}</span>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  );
-                                })()}
-
-                                {milestone.references && milestone.references.length > 0 && (
-                                  <div className="space-y-1.5 pt-1.5 border-t border-zinc-100/50 dark:border-zinc-850">
-                                    <div className="flex items-center gap-1 text-[9px] font-bold tracking-wider text-zinc-400 uppercase font-mono">
-                                      <BookOpen className="w-3.5 h-3.5 text-zinc-450" />
-                                      <span>REFERENCIAS APA</span>
-                                    </div>
-                                    <div className="space-y-1 bg-zinc-50 dark:bg-zinc-950 p-2 rounded-lg border border-zinc-200/50 dark:border-zinc-850">
-                                      {milestone.references.map((ref) => (
-                                        <div key={ref.id} className="text-[10px] text-zinc-505 dark:text-zinc-500 leading-normal flex gap-1 items-start">
-                                          <span className="text-purple-500 font-bold font-mono">[{ref.id}]</span>
-                                          <div className="flex-1 font-sans leading-tight">
-                                            {ref.citation}
-                                          </div>
-                                        </div>
-                                      ))}
-                                    </div>
-                                  </div>
-                                )}
-                              </motion.div>
-                            )}
-
-                            <div 
-                              onClick={() => toggleExpand(milestone.id)}
-                              className="flex items-center justify-between pt-2 border-t border-zinc-100 dark:border-zinc-850 text-[10px] font-mono text-zinc-400 dark:text-zinc-500"
-                            >
-                              <span>
-                                {isExpanded ? "Ocultar deconstrucción" : "Deconstruir evidencias"}
-                              </span>
-                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-300 ${isExpanded ? "rotate-180" : ""}`} />
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })()}
             </div>
-
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ========================================== */}
       {/* 2. DETAILED EXPLORER LAYOUT (Original View) */}
@@ -1527,7 +1328,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                             {m.title}
                           </h4>
 
-                          <p className="text-[11px] leading-relaxed text-zinc-500 dark:text-zinc-400 font-light line-clamp-2">
+                          <p className="text-[11px] leading-relaxed text-zinc-550 dark:text-zinc-400 font-light line-clamp-2">
                             {m.shortDesc}
                           </p>
 
@@ -1589,7 +1390,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                           </div>
                         </div>
                       ) : (
-                        <div className="flex flex-col items-center justify-center text-center py-20 text-zinc-500">
+                        <div className="flex flex-col items-center justify-center text-center py-20 text-zinc-505">
                           <GitCompare className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-3 animate-pulse" />
                           <p className="text-xs font-light max-w-xs leading-relaxed">
                             Haz clic en dos hitos de la lista de la izquierda para calibrar el retardo histórico y el desfase de empatía.
@@ -1621,7 +1422,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
                     {selectedMilestone ? (
                       renderDetailsContent(selectedMilestone)
                     ) : (
-                      <div className="flex flex-col items-center justify-center text-center h-full text-zinc-500 py-24">
+                      <div className="flex flex-col items-center justify-center text-center h-full text-zinc-505 py-24">
                         <Clock className="w-12 h-12 stroke-1 text-zinc-300 dark:text-zinc-700 mb-2 animate-pulse" />
                         <p className="text-xs font-light max-w-[220px]">
                           Selecciona un hito de la lista para deconstruir sus evidencias e implicaciones morales.
@@ -1660,7 +1461,7 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
               <div className="w-12 h-1 rounded-full bg-zinc-300 dark:bg-zinc-800 mx-auto mb-5 shrink-0" />
               <button
                 onClick={() => setIsMobileDetailOpen(false)}
-                className="absolute top-5 right-5 p-2 rounded-full bg-zinc-200/50 dark:bg-zinc-900/60 border border-zinc-300/40 dark:border-zinc-800 hover:bg-zinc-300/70 dark:hover:bg-zinc-800/80 text-zinc-500 hover:text-zinc-950 transition-all cursor-pointer"
+                className="absolute top-5 right-5 p-2 rounded-full bg-zinc-200/50 dark:bg-zinc-900/60 border border-zinc-300/40 dark:border-zinc-800 hover:bg-zinc-300/70 dark:hover:bg-zinc-800/80 text-zinc-500 hover:text-zinc-95 transition-all cursor-pointer"
               >
                 <X className="w-4 h-4" />
               </button>

@@ -2,112 +2,7 @@ import React, { useEffect, useRef, useState } from "react";
 import { CORE_NODES, NodeDetail } from "../types";
 import { Info, HelpCircle, Activity, Globe, Scale, Maximize2, Minimize2, ExternalLink, BookOpen, ChevronDown, ChevronUp } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-
-interface ReferenceTooltipProps {
-  refDetail: { id: string; citation: string; url?: string };
-  children: React.ReactNode;
-  key?: any;
-}
-
-function ReferenceTooltip({ refDetail, children }: ReferenceTooltipProps) {
-  const [isOpen, setIsOpen] = useState(false);
-  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
-
-  const handleMouseEnter = () => {
-    if (timeoutRef.current) clearTimeout(timeoutRef.current);
-    setIsOpen(true);
-  };
-
-  const handleMouseLeave = () => {
-    timeoutRef.current = setTimeout(() => {
-      setIsOpen(false);
-    }, 150);
-  };
-
-  return (
-    <span 
-      className="relative inline-block"
-      onMouseEnter={handleMouseEnter}
-      onMouseLeave={handleMouseLeave}
-      onClick={(e) => {
-        e.stopPropagation();
-        setIsOpen(!isOpen);
-      }}
-    >
-      {children}
-      <AnimatePresence>
-        {isOpen && (
-          <motion.span
-            initial={{ opacity: 0, y: 5, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 5, scale: 0.95 }}
-            transition={{ duration: 0.15 }}
-            className="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 w-64 p-3 bg-zinc-900 dark:bg-zinc-950 text-white rounded-xl shadow-xl border border-zinc-800/80 z-50 text-left font-sans block pointer-events-auto cursor-default normal-case tracking-normal whitespace-normal font-normal"
-            onClick={(e) => e.stopPropagation()}
-            onMouseEnter={() => {
-              if (timeoutRef.current) clearTimeout(timeoutRef.current);
-            }}
-            onMouseLeave={handleMouseLeave}
-          >
-            <span className="block text-[9px] font-mono uppercase tracking-wider text-cyan-400 font-bold mb-1">
-              Referencia [{refDetail.id}]
-            </span>
-            <span className="block text-[10.5px] leading-relaxed text-zinc-200 font-light font-sans select-text">
-              {refDetail.citation}
-            </span>
-            {refDetail.url && (
-              <a
-                href={refDetail.url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2.5 inline-flex items-center gap-1 text-[9px] font-mono uppercase font-bold text-cyan-400 hover:text-cyan-300 transition-colors cursor-pointer select-none"
-              >
-                <span>Ver artículo completo</span>
-                <ExternalLink className="w-2.5 h-2.5" />
-              </a>
-            )}
-            <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-zinc-900 dark:border-t-zinc-950" />
-          </motion.span>
-        )}
-      </AnimatePresence>
-    </span>
-  );
-}
-
-const renderTextWithReferences = (text: string, references?: { id: string; citation: string; url?: string }[]) => {
-  if (!references || references.length === 0) return <span>{text}</span>;
-
-  const parts = text.split(/(\[[0-9,\s]+\])/g);
-  
-  return (
-    <>
-      {parts.map((part, idx) => {
-        const match = part.match(/^\[([0-9,\s]+)\]$/);
-        if (match) {
-          const numbers = match[1].split(",").map((num) => num.trim());
-          return (
-            <span key={idx} className="inline-flex gap-0.5">
-              {numbers.map((refId, nIdx) => {
-                const ref = references.find((r) => r.id === refId);
-                if (ref) {
-                  return (
-                    <ReferenceTooltip key={nIdx} refDetail={ref}>
-                      <sup className="text-cyan-500 dark:text-cyan-400 font-bold hover:text-cyan-600 dark:hover:text-cyan-300 transition-colors px-0.5 cursor-pointer select-none">
-                        [{refId}]
-                      </sup>
-                    </ReferenceTooltip>
-                  );
-                }
-                return <sup key={nIdx}>[{refId}]</sup>;
-              })}
-            </span>
-          );
-        }
-        return <span key={idx}>{part}</span>;
-      })}
-    </>
-  );
-};
+import TextRenderer from "./TextRenderer";
 
 interface GraphNode {
   id: string;
@@ -781,7 +676,7 @@ export default function NetworkGraph() {
                   </h2>
 
                   <p className="text-[11.5px] text-zinc-600 dark:text-zinc-400 font-light leading-relaxed select-text">
-                    {renderTextWithReferences(selectedNode.longDesc, selectedNode.references)}
+                    <TextRenderer text={selectedNode.longDesc} references={selectedNode.references} />
                   </p>
 
                   <div className="space-y-3 pt-1">
@@ -793,7 +688,7 @@ export default function NetworkGraph() {
                       {selectedNode.scientificFacts.map((fact, i) => (
                         <li key={i} className="flex items-start gap-2 bg-zinc-50/50 dark:bg-zinc-900/10 p-2.5 rounded-xl border border-zinc-200/50 dark:border-zinc-900/30">
                           <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
-                          <span>{renderTextWithReferences(fact, selectedNode.references)}</span>
+                          <span><TextRenderer text={fact} references={selectedNode.references} /></span>
                         </li>
                       ))}
                     </ul>
@@ -961,7 +856,7 @@ export default function NetworkGraph() {
                 </h2>
 
                 <p className="text-xs sm:text-sm text-zinc-600 dark:text-zinc-400 font-light leading-relaxed transition-colors select-text">
-                  {renderTextWithReferences(selectedNode.longDesc, selectedNode.references)}
+                  <TextRenderer text={selectedNode.longDesc} references={selectedNode.references} />
                 </p>
 
                 <div className="space-y-3 pt-2">
@@ -971,9 +866,9 @@ export default function NetworkGraph() {
                   </h4>
                   <ul className="space-y-2 text-xs text-zinc-600 dark:text-zinc-400 leading-relaxed font-light select-text">
                     {selectedNode.scientificFacts.map((fact, i) => (
-                      <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200 dark:border-zinc-800/40 transition-colors">
+                      <li key={i} className="flex items-start gap-2 bg-white dark:bg-zinc-950/40 p-3 rounded-xl border border-zinc-200/60 dark:border-zinc-800/40 transition-colors">
                         <span className="text-zinc-400 dark:text-zinc-600 font-mono font-semibold mt-0.5 select-none">[{i + 1}]</span>
-                        <span>{renderTextWithReferences(fact, selectedNode.references)}</span>
+                        <span><TextRenderer text={fact} references={selectedNode.references} /></span>
                       </li>
                     ))}
                   </ul>

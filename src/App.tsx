@@ -24,6 +24,7 @@ import ExcusesDilemmas from "./components/ExcusesDilemmas";
 import ImpactCalculator from "./components/ImpactCalculator";
 import AiValidator from "./components/AiValidator";
 import { motion, AnimatePresence } from "motion/react";
+import { CORE_NODES } from "./types";
 
 type TabType = "grafo" | "cronologia" | "dialectica" | "calculadora" | "validador";
 
@@ -46,6 +47,28 @@ export default function App() {
     }
     localStorage.setItem("theme", theme);
   }, [theme]);
+
+  useEffect(() => {
+    const handleNavigate = (e: Event) => {
+      const customEvent = e as CustomEvent<string>;
+      const targetId = customEvent.detail;
+      if (!targetId) return;
+
+      const isNode = CORE_NODES.some((n) => n.id === targetId);
+      if (isNode) {
+        setRedirectNodeId(targetId);
+        setActiveTab("grafo");
+      } else {
+        setActiveTab("dialectica");
+        setTimeout(() => {
+          window.dispatchEvent(new CustomEvent("expand-dilemma", { detail: targetId }));
+        }, 80);
+      }
+    };
+
+    window.addEventListener("navigate-to-item", handleNavigate);
+    return () => window.removeEventListener("navigate-to-item", handleNavigate);
+  }, []);
 
   const handleDeconstructTrigger = (excuse: string) => {
     setPassedArgument(excuse);
