@@ -63,14 +63,16 @@ export default function App() {
           
           {/* Logo and Identity */}
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-red-500/10 via-purple-600/10 to-emerald-500/10 border border-zinc-200 dark:border-zinc-800 flex items-center justify-center relative overflow-hidden group transition-colors">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-rose-500/10 via-purple-600/10 to-emerald-500/10 border border-zinc-200/80 dark:border-zinc-800/85 flex items-center justify-center relative overflow-hidden group transition-all duration-300 shadow-inner">
               <div className="absolute inset-0 bg-zinc-900/5 dark:bg-white/5 opacity-0 group-hover:opacity-100 transition-opacity" />
-              <Layers className="w-4 h-4 text-zinc-700 dark:text-zinc-300" />
+              {/* Custom SVG logo representing sentience (heart + neural connection + leaf) */}
+              <svg className="w-5 h-5 transition-transform duration-300 group-hover:scale-110" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 2C8 2 4.5 5.5 4.5 9.5C4.5 15 12 22 12 22C12 22 19.5 15 19.5 9.5C19.5 5.5 16 2 12 2Z" className="stroke-zinc-700 dark:stroke-zinc-300" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M12 6C10.5 7.5 9.5 9 9.5 10.5C9.5 12 10.5 13.5 12 15C13.5 13.5 14.5 12 14.5 10.5C14.5 9 13.5 7.5 12 6Z" className="fill-rose-500/80 dark:fill-rose-400/90 stroke-rose-500 dark:stroke-rose-400" strokeWidth="0.8" />
+                <circle cx="12" cy="10.5" r="2.5" className="fill-white dark:fill-zinc-950 stroke-purple-500 dark:stroke-purple-400" strokeWidth="1.2" />
+              </svg>
             </div>
-            <div>
-              <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">SITIENS</h1>
-              <p className="text-[10px] text-zinc-500 font-medium tracking-tight">¿Qué vidas importan?</p>
-            </div>
+            <h1 className="text-sm font-black text-zinc-900 dark:text-white tracking-widest font-mono uppercase">SITIENS</h1>
           </div>
 
           {/* Quick tab controllers & Theme Toggle */}
@@ -131,10 +133,7 @@ export default function App() {
               transition={{ duration: 0.25 }}
               className="space-y-4 max-w-4xl"
             >
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-zinc-100 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 transition-colors">
-                <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse animate-duration-1500" />
-                <span className="text-[10px] font-mono tracking-widest uppercase text-zinc-500 dark:text-zinc-400 font-bold">Iniciativa bioética laica</span>
-              </div>
+              {/* Badge removed for cleaner header spacing */}
               <h2 className="text-3xl sm:text-5xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
                 ¿Qué vidas importan?
               </h2>
