@@ -126,13 +126,34 @@ const renderTextWithReferences = (text: string, references?: ReferenceDetail[]) 
   );
 };
 
-export default function ConceptExplorer() {
+interface ConceptExplorerProps {
+  initialNodeId?: string | null;
+  onClearInitialNodeId?: () => void;
+}
+
+export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }: ConceptExplorerProps) {
   const [viewMode, setViewMode] = useState<"cards" | "graph">("cards");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("all");
   const [selectedNode, setSelectedNode] = useState<NodeDetail | null>(CORE_NODES[0]);
   const [isBibliographyOpen, setIsBibliographyOpen] = useState(false);
   const [isMobileDetailOpen, setIsMobileDetailOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialNodeId) {
+      const node = CORE_NODES.find((n) => n.id === initialNodeId);
+      if (node) {
+        setSelectedNode(node);
+        setSelectedCategory("all"); // ensure it is visible regardless of active category filter
+        if (window.innerWidth < 1024) {
+          setIsMobileDetailOpen(true);
+        }
+      }
+      if (onClearInitialNodeId) {
+        onClearInitialNodeId();
+      }
+    }
+  }, [initialNodeId, onClearInitialNodeId]);
 
   // Collapse bibliography when selected node changes
   useEffect(() => {

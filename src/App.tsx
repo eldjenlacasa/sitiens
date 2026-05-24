@@ -14,19 +14,22 @@ import {
   TrendingDown,
   Info,
   Sun,
-  Moon
+  Moon,
+  Clock
 } from "lucide-react";
 import ConceptExplorer from "./components/ConceptExplorer";
+import TimelineExplorer from "./components/TimelineExplorer";
 import ExcusesDilemmas from "./components/ExcusesDilemmas";
 import ImpactCalculator from "./components/ImpactCalculator";
 import AiValidator from "./components/AiValidator";
 import { motion, AnimatePresence } from "motion/react";
 
-type TabType = "grafo" | "dialectica" | "calculadora" | "validador";
+type TabType = "grafo" | "cronologia" | "dialectica" | "calculadora" | "validador";
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>("grafo");
   const [passedArgument, setPassedArgument] = useState<string | null>(null);
+  const [redirectNodeId, setRedirectNodeId] = useState<string | null>(null);
   const [theme, setTheme] = useState<"dark" | "light">(() => {
     const saved = localStorage.getItem("theme");
     if (saved === "light" || saved === "dark") return saved;
@@ -50,6 +53,11 @@ export default function App() {
 
   const handleClearTrigger = () => {
     setPassedArgument(null);
+  };
+
+  const handleRedirectToConcept = (nodeId: string) => {
+    setRedirectNodeId(nodeId);
+    setActiveTab("grafo");
   };
 
   return (
@@ -81,6 +89,7 @@ export default function App() {
               {(
                 [
                   { id: "grafo", label: "Conceptos" },
+                  { id: "cronologia", label: "Cronología" },
                   { id: "dialectica", label: "Tesis & Dilemas" },
                   { id: "calculadora", label: "El Cuantificador" },
                   { id: "validador", label: "Sintiens IA" }
@@ -122,8 +131,7 @@ export default function App() {
 
       {/* Main core layout wrapper */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 lg:py-12 relative z-10 space-y-12">
-        
-        {/* Welcome Section */}
+                {/* Welcome Section */}
         <AnimatePresence mode="wait">
           {activeTab === "grafo" && (
             <motion.div
@@ -132,13 +140,32 @@ export default function App() {
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.25 }}
               className="space-y-4 max-w-4xl"
+              key="welcome-grafo"
             >
               {/* Badge removed for cleaner header spacing */}
               <h2 className="text-3xl sm:text-5xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
                 ¿Qué vidas importan?
               </h2>
-              <p className="text-zinc-600 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
+              <p className="text-zinc-650 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
                 Un análisis crítico sobre nuestra relación con los animales y los axiomas que la definen
+              </p>
+            </motion.div>
+          )}
+
+          {activeTab === "cronologia" && (
+            <motion.div
+              initial={{ opacity: 0, y: -10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25 }}
+              className="space-y-4 max-w-4xl"
+              key="welcome-cronologia"
+            >
+              <h2 className="text-3xl sm:text-5xl font-black text-zinc-900 dark:text-white tracking-tight leading-tight">
+                La Brecha del Progreso
+              </h2>
+              <p className="text-zinc-650 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
+                Explora la evolución de la instrumentalización animal y el retraso histórico de la moral humana
               </p>
             </motion.div>
           )}
@@ -156,7 +183,23 @@ export default function App() {
                 transition={{ duration: 0.25 }}
                 className="w-full"
               >
-                <ConceptExplorer />
+                <ConceptExplorer 
+                  initialNodeId={redirectNodeId} 
+                  onClearInitialNodeId={() => setRedirectNodeId(null)} 
+                />
+              </motion.div>
+            )}
+
+            {activeTab === "cronologia" && (
+              <motion.div
+                key="cronologia"
+                initial={{ opacity: 0, y: 15 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -15 }}
+                transition={{ duration: 0.25 }}
+                className="w-full"
+              >
+                <TimelineExplorer onRedirectToConcept={handleRedirectToConcept} />
               </motion.div>
             )}
 
@@ -253,7 +296,8 @@ export default function App() {
       <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 w-[92%] max-w-[400px] bg-white/80 dark:bg-zinc-950/85 backdrop-blur-xl border border-zinc-200/80 dark:border-zinc-900/80 p-2 rounded-2xl flex items-center justify-around shadow-2xl transition-all duration-300">
         {(
           [
-            { id: "grafo", label: "El Grafo", icon: Network },
+            { id: "grafo", label: "Conceptos", icon: Network },
+            { id: "cronologia", label: "Historia", icon: Clock },
             { id: "dialectica", label: "Tesis", icon: Scale },
             { id: "calculadora", label: "Impacto", icon: Activity },
             { id: "validador", label: "Sintiens IA", icon: Sparkles }
