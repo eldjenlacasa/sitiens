@@ -1814,15 +1814,18 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                               <Calendar className="w-3 h-3 text-zinc-300 dark:text-zinc-700" />
                               {new Date(task.createdAt).toLocaleDateString()}
                             </span>
-                            
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => handleFocusTask(task)}
-                                className="text-purple-600 dark:text-purple-400 hover:underline hover:text-purple-700 dark:hover:text-purple-300 font-bold cursor-pointer flex items-center gap-0.5"
-                              >
-                                Ir a Sección <ExternalLink className="w-2.5 h-2.5" />
-                              </button>
-                              <span className="text-zinc-200 dark:text-zinc-850">|</span>
+                                               <div className="flex items-center gap-2">
+                              {task.selector && (
+                                <>
+                                  <button
+                                    onClick={() => handleFocusTask(task)}
+                                    className="text-purple-600 dark:text-purple-400 hover:underline hover:text-purple-700 dark:hover:text-purple-300 font-bold cursor-pointer flex items-center gap-0.5"
+                                  >
+                                    Ir a Sección <ExternalLink className="w-2.5 h-2.5" />
+                                  </button>
+                                  <span className="text-zinc-200 dark:text-zinc-850">|</span>
+                                </>
+                              )}
                               <button
                                 onClick={() => {
                                   setSelectedTask(task);
