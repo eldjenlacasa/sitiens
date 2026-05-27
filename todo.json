@@ -230,6 +230,15 @@
     "createdAt": "2026-05-27T16:35:00.000Z"
   },
   {
+    "id": "t_integrar_datos_owid",
+    "title": "Integrar datos interactivos de Our World in Data y otras fuentes",
+    "description": "Conectar con bases de datos públicas de Our World in Data (consumo de carne, deforestación, número de sacrificios anuales) para crear visualizaciones dinámicas, interactivas e impactantes en la sección de datos de la web.",
+    "tab": "calculadora",
+    "priority": "high",
+    "status": "todo",
+    "createdAt": "2026-05-27T16:35:00.000Z"
+  },
+  {
     "id": "t_scroll_continuo_cuento",
     "title": "Implementar modo lectura de 'Scroll Continuo' guiado con elecciones",
     "description": "Diseñar una experiencia narrativa inmersiva ('tipo libro/cuento'). Si el usuario continúa scroleando en la Home, se le desliza automáticamente al siguiente tema de forma fluida. Permitir pequeñas elecciones en bifurcaciones de lectura.",
