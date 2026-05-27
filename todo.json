@@ -1,0 +1,16 @@
+[
+  {
+    "id": "5x33j48mpo9bkyi",
+    "title": "deberia tener el mismo formato que el de ocultar",
+    "description": "",
+    "tab": "grafo",
+    "x": 2.5000005960464478,
+    "y": 7.5212894124978416,
+    "w": 23.406250476837158,
+    "h": 1.3295858927307815,
+    "selector": "main > div.space-y-6:nth-of-type(1) > div.flex > button.inline-flex",
+    "priority": "normal",
+    "status": "todo",
+    "createdAt": "2026-05-27T16:06:53.658Z"
+  }
+]

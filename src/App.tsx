@@ -23,8 +23,10 @@ import TimelineExplorer from "./components/TimelineExplorer";
 import ExcusesDilemmas from "./components/ExcusesDilemmas";
 import ImpactCalculator from "./components/ImpactCalculator";
 import AiValidator from "./components/AiValidator";
+import SocraticReflection from "./components/SocraticReflection";
 import { motion, AnimatePresence } from "motion/react";
 import { CORE_NODES } from "./types";
+import DevModeOverlay from "./components/DevModeOverlay";
 
 type TabType = "grafo" | "cronologia" | "dialectica" | "calculadora" | "validador";
 
@@ -163,7 +165,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -10 }}
               transition={{ duration: 0.25 }}
-              className="space-y-4 max-w-4xl"
+              className="space-y-6 max-w-4xl w-full"
               key="welcome-grafo"
             >
               {/* Badge removed for cleaner header spacing */}
@@ -173,6 +175,7 @@ export default function App() {
               <p className="text-zinc-650 dark:text-zinc-400 text-sm md:text-base font-light leading-relaxed max-w-3xl">
                 Un análisis crítico sobre nuestra relación con los animales y los axiomas que la definen
               </p>
+              <SocraticReflection />
             </motion.div>
           )}
 
@@ -301,6 +304,9 @@ export default function App() {
           </div>
         )}
 
+        {import.meta.env.DEV && (
+          <DevModeOverlay activeTab={activeTab} setActiveTab={setActiveTab} />
+        )}
       </main>
 
       {/* Simple, descriptive minimal footer */}

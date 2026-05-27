@@ -3,6 +3,9 @@ import dotenv from "dotenv";
 import express from "express";
 import path from "path";
 import { createServer as createViteServer } from "vite";
+import fs from "fs/promises";
+import { fileURLToPath } from "url";
+import os from "os";
 
 dotenv.config();
 
@@ -30,6 +33,197 @@ function getAiClient() {
 }
 
 app.use(express.json());
+
+// Stable ESM/CJS relative path resolution for the local database
+let tasksDirectory = process.cwd();
+try {
+  if (typeof import.meta.url === "string") {
+    tasksDirectory = path.dirname(fileURLToPath(import.meta.url));
+  }
+} catch (e) {
+  if (typeof __dirname === "string") {
+    tasksDirectory = __dirname;
+  }
+}
+
+// If running from production dist folder, step up to the project root
+if (path.basename(tasksDirectory) === "dist") {
+  tasksDirectory = path.dirname(tasksDirectory);
+}
+
+const TASKS_FILE_PATH = path.join(tasksDirectory, "todo.json");
+
+// Backup location in user's permanent App Data Directory
+const BACKUP_DIR = path.join(os.homedir(), ".gemini", "antigravity");
+const BACKUP_FILE_PATH = path.join(BACKUP_DIR, "todo_backup.json");
+
+// Helper to read tasks with automatic recovery from backup
+async function readTasks(): Promise<any[]> {
+  let workspaceTasks: any[] = [];
+  let workspaceReadSuccess = false;
+
+  // 1. Try to read from project workspace todo.json
+  try {
+    const data = await fs.readFile(TASKS_FILE_PATH, "utf-8");
+    workspaceTasks = JSON.parse(data);
+    workspaceReadSuccess = true;
+  } catch (err) {
+    console.warn("Workspace todo.json not found or failed to read. Attempting backup recovery...");
+  }
+
+  // 2. If workspace file read failed OR is empty, attempt recovery from permanent backup
+  if (!workspaceReadSuccess || workspaceTasks.length === 0) {
+    try {
+      const backupData = await fs.readFile(BACKUP_FILE_PATH, "utf-8");
+      const backupTasks = JSON.parse(backupData);
+      
+      if (Array.isArray(backupTasks) && backupTasks.length > 0) {
+        console.log(`Successfully recovered ${backupTasks.length} tasks from AppData backup! Syncing to workspace.`);
+        // Auto-restore back to workspace todo.json
+        await fs.writeFile(TASKS_FILE_PATH, JSON.stringify(backupTasks, null, 2), "utf-8");
+        return backupTasks;
+      }
+    } catch (backupErr) {
+      console.warn("No backup found or backup file is empty/corrupt.");
+    }
+  }
+
+  return workspaceTasks;
+}
+
+// Helper to write tasks with dual-write replication (Workspace + Permanent Backup)
+async function writeTasks(tasks: any[]): Promise<boolean> {
+  try {
+    if (process.env.NODE_ENV === "production") {
+      console.warn("Attempted to write tasks in production mode. Prevented.");
+      return false;
+    }
+
+    // 1. Write to the workspace todo.json
+    await fs.writeFile(TASKS_FILE_PATH, JSON.stringify(tasks, null, 2), "utf-8");
+
+    // 2. Replication: Write duplicate copy to user's App Data Directory backup
+    try {
+      await fs.mkdir(BACKUP_DIR, { recursive: true });
+      await fs.writeFile(BACKUP_FILE_PATH, JSON.stringify(tasks, null, 2), "utf-8");
+    } catch (backupErr) {
+      console.error("Failed to write tasks to permanent backup path:", backupErr);
+    }
+
+    return true;
+  } catch (err) {
+    console.error("Error writing tasks file:", err);
+    return false;
+  }
+}
+
+// Express Endpoints for Dev Tasks
+app.get("/api/dev/tasks", async (req, res) => {
+  const tasks = await readTasks();
+  res.json(tasks);
+});
+
+app.post("/api/dev/tasks", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { title, description, tab, x, y, w, h, selector, rx, ry, rw, rh, priority, status } = req.body;
+    if (!title || typeof title !== "string" || !title.trim()) {
+      return res.status(400).json({ error: "El título de la tarea es obligatorio." });
+    }
+
+    const tasks = await readTasks();
+    const newTask = {
+      id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
+      title: title.trim(),
+      description: (description || "").trim(),
+      tab: tab || "general",
+      x: typeof x === "number" ? x : undefined,
+      y: typeof y === "number" ? y : undefined,
+      w: typeof w === "number" ? w : undefined,
+      h: typeof h === "number" ? h : undefined,
+      selector: typeof selector === "string" ? selector : undefined,
+      rx: typeof rx === "number" ? rx : undefined,
+      ry: typeof ry === "number" ? ry : undefined,
+      rw: typeof rw === "number" ? rw : undefined,
+      rh: typeof rh === "number" ? rh : undefined,
+      priority: priority || "medium",
+      status: status || "todo",
+      createdAt: new Date().toISOString(),
+    };
+
+    tasks.push(newTask);
+    const success = await writeTasks(tasks);
+    if (!success) {
+      return res.status(500).json({ error: "No se pudo guardar la tarea en el archivo." });
+    }
+    res.status(201).json(newTask);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.put("/api/dev/tasks/:id", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const { title, description, priority, status, selector, rx, ry, rw, rh } = req.body;
+
+    const tasks = await readTasks();
+    const taskIndex = tasks.findIndex((t) => t.id === id);
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const updatedTask = {
+      ...tasks[taskIndex],
+      title: title !== undefined ? title.trim() : tasks[taskIndex].title,
+      description: description !== undefined ? description.trim() : tasks[taskIndex].description,
+      priority: priority !== undefined ? priority : tasks[taskIndex].priority,
+      status: status !== undefined ? status : tasks[taskIndex].status,
+      selector: selector !== undefined ? selector : tasks[taskIndex].selector,
+      rx: rx !== undefined ? rx : tasks[taskIndex].rx,
+      ry: ry !== undefined ? ry : tasks[taskIndex].ry,
+      rw: rw !== undefined ? rw : tasks[taskIndex].rw,
+      rh: rh !== undefined ? rh : tasks[taskIndex].rh,
+    };
+
+    tasks[taskIndex] = updatedTask;
+    const success = await writeTasks(tasks);
+    if (!success) {
+      return res.status(500).json({ error: "No se pudo guardar la tarea actualizada." });
+    }
+    res.json(updatedTask);
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.delete("/api/dev/tasks/:id", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const tasks = await readTasks();
+    const filteredTasks = tasks.filter((t) => t.id !== id);
+
+    if (tasks.length === filteredTasks.length) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const success = await writeTasks(filteredTasks);
+    if (!success) {
+      return res.status(500).json({ error: "No se pudo eliminar la tarea." });
+    }
+    res.json({ message: "Tarea eliminada correctamente." });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
 
 // API routes FIRST
 app.post("/api/analyze-argument", async (req, res) => {

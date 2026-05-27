@@ -1,0 +1,24 @@
+[
+  {
+    "id": "oyw2eztmpn7de19",
+    "title": "no funciona modo oscuro pierde los colores",
+    "description": "",
+    "tab": "grafo",
+    "x": 58.70493273646472,
+    "y": 13.624593216419767,
+    "priority": "medium",
+    "status": "todo",
+    "createdAt": "2026-05-26T22:24:32.589Z"
+  },
+  {
+    "id": "pjunwpempn7j2uq",
+    "title": "no es una introduccion es si es mas como un feature",
+    "description": "",
+    "tab": "grafo",
+    "x": 36.64610952639919,
+    "y": 9.889036722884901,
+    "priority": "medium",
+    "status": "todo",
+    "createdAt": "2026-05-26T22:28:58.034Z"
+  }
+]
