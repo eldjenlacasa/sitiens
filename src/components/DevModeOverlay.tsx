@@ -1259,7 +1259,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
                     {/* Elegant tooltip near the badge at the top-left corner, not covering the container center */}
                     <div className="absolute top-[-28px] left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[84] whitespace-nowrap">
-                      <div className="bg-zinc-950/95 text-zinc-250 backdrop-blur-md border border-zinc-800 px-2.5 py-1.5 rounded-xl text-[9px] font-medium shadow-xl">
+                      <div className="bg-zinc-950/95 text-zinc-200 backdrop-blur-md border border-zinc-800 px-2.5 py-1.5 rounded-xl text-[9px] font-medium shadow-xl">
                         {task.title}
                       </div>
                     </div>
@@ -1280,7 +1280,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                             <span className="font-mono text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
                               ID: #{task.id.substring(0, 5)}
                             </span>
-                            <span className="text-zinc-250 dark:text-zinc-850">|</span>
+                            <span className="text-zinc-300 dark:text-zinc-700">|</span>
                             <span className="text-[10px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
                               {getTabLabel(task.tab)}
                             </span>
@@ -1384,7 +1384,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                           <span className="font-mono text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
                             ID: #{task.id.substring(0, 5)}
                           </span>
-                          <span className="text-zinc-250 dark:text-zinc-850">|</span>
+                          <span className="text-zinc-300 dark:text-zinc-700">|</span>
                           <span className="text-[10px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
                             {getTabLabel(task.tab)}
                           </span>
@@ -2036,7 +2036,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                   <span className="font-mono text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
                     ID: #{selectedTask.id.substring(0, 5)}
                   </span>
-                  <span className="text-zinc-250 dark:text-zinc-855">|</span>
+                  <span className="text-zinc-300 dark:text-zinc-700">|</span>
                   <span className="text-[10px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
                     {getTabLabel(selectedTask.tab)}
                   </span>
