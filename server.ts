@@ -6,6 +6,10 @@ import { createServer as createViteServer } from "vite";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import os from "os";
+import { exec as execCallback } from "child_process";
+import { promisify } from "util";
+
+const exec = promisify(execCallback);
 
 dotenv.config();
 
@@ -220,6 +224,267 @@ app.delete("/api/dev/tasks/:id", async (req, res) => {
       return res.status(500).json({ error: "No se pudo eliminar la tarea." });
     }
     res.json({ message: "Tarea eliminada correctamente." });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Helper for running Git commands securely in project root
+async function runGit(cmd: string): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await exec(cmd, { cwd: tasksDirectory });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (err: any) {
+    console.error(`Error running Git command: ${cmd}`, err);
+    throw new Error(`Git error: ${err.message}`);
+  }
+}
+
+// Endpoint: Obtener el estado actual de Git
+app.get("/api/dev/git-status", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { stdout: branch } = await runGit("git branch --show-current");
+    const { stdout: status } = await runGit("git status --porcelain");
+    res.json({
+      branch,
+      hasUncommittedChanges: status.length > 0,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Iniciar previsualización en vivo de una tarea
+app.post("/api/dev/tasks/:id/preview", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const tasks = await readTasks();
+    const taskIndex = tasks.findIndex((t) => t.id === id);
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const task = tasks[taskIndex];
+    const branchName = `ai-review-${id}`;
+
+    // Verificar si la rama existe localmente
+    try {
+      await runGit(`git show-ref --verify refs/heads/${branchName}`);
+    } catch (e) {
+      return res.status(400).json({ error: `La rama ${branchName} para previsualizar no existe.` });
+    }
+
+    // Obtener la rama actual para recordarla como originalBranch
+    const { stdout: currentBranch } = await runGit("git branch --show-current");
+    
+    // Si ya estamos en la rama de previsualización, no hacemos nada
+    if (currentBranch === branchName) {
+      return res.json({ success: true, activeBranch: branchName });
+    }
+
+    task.originalBranch = currentBranch;
+    await writeTasks(tasks);
+
+    // Si el usuario tiene cambios locales sin confirmar, los stasheamos
+    const { stdout: status } = await runGit("git status --porcelain");
+    if (status.length > 0) {
+      console.log("Stashing local changes before preview...");
+      await runGit(`git stash save "AI Preview Auto-Stash [${id}]"`);
+      task.hasStashedChanges = true;
+      await writeTasks(tasks);
+    }
+
+    // Hacer el checkout de la rama de la IA
+    await runGit(`git checkout ${branchName}`);
+    res.json({ success: true, activeBranch: branchName });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Aprobar y fusionar cambios de una tarea
+app.post("/api/dev/tasks/:id/approve", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const tasks = await readTasks();
+    const taskIndex = tasks.findIndex((t) => t.id === id);
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const task = tasks[taskIndex];
+    const branchName = `ai-review-${id}`;
+    const originalBranch = task.originalBranch || "main";
+
+    // Cambiar de vuelta a la rama original del usuario
+    await runGit(`git checkout ${originalBranch}`);
+
+    // Fusionar la rama de la IA en la rama original
+    console.log(`Merging ${branchName} into ${originalBranch}...`);
+    await runGit(`git merge ${branchName} --no-edit -m "Merge branch '${branchName}' via AI Dev Board"`);
+
+    // Eliminar la rama temporal
+    try {
+      await runGit(`git branch -D ${branchName}`);
+    } catch (e) {
+      console.warn("Failed to delete merged branch:", e);
+    }
+
+    // Deshacer el stash si existía alguno para esta previsualización
+    if (task.hasStashedChanges) {
+      try {
+        console.log("Popping preview stash...");
+        await runGit("git stash pop");
+      } catch (stashErr) {
+        console.warn("Failed to pop stash, local changes might be conflicted. Stash remains safe in Git history.", stashErr);
+      }
+    }
+
+    // Limpiar el prefijo de título de la IA
+    let cleanTitle = task.title;
+    const prefixes = ["[IA: Listo para verificar]", "[IA: Listo para verificar (V2)]", "[IA: Ajustes Solicitados]", "[IA: Sugerencia de Diseño]"];
+    for (const prefix of prefixes) {
+      if (cleanTitle.startsWith(prefix)) {
+        cleanTitle = cleanTitle.substring(prefix.length).trim();
+      }
+    }
+
+    task.title = cleanTitle;
+    task.status = "done";
+    task.originalBranch = undefined;
+    task.hasStashedChanges = undefined;
+    task.aiFeedback = undefined;
+    await writeTasks(tasks);
+
+    res.json({ success: true, status: "done" });
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Rechazar y borrar cambios de una tarea
+app.post("/api/dev/tasks/:id/reject", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const tasks = await readTasks();
+    const taskIndex = tasks.findIndex((t) => t.id === id);
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const task = tasks[taskIndex];
+    const branchName = `ai-review-${id}`;
+    const originalBranch = task.originalBranch || "main";
+
+    // Volver a la rama original
+    await runGit(`git checkout ${originalBranch}`);
+
+    // Borrar la rama de la IA
+    try {
+      await runGit(`git branch -D ${branchName}`);
+    } catch (e) {
+      console.warn(`Branch ${branchName} did not exist or could not be deleted.`);
+    }
+
+    // Deshacer el stash
+    if (task.hasStashedChanges) {
+      try {
+        console.log("Popping preview stash on reject...");
+        await runGit("git stash pop");
+      } catch (stashErr) {
+        console.warn("Failed to pop stash on reject.", stashErr);
+      }
+    }
+
+    // Si es una sugerencia pura de la IA, la eliminamos; de lo contrario restauramos el TODO
+    if (task.title.startsWith("[IA: Sugerencia de Diseño]")) {
+      const filteredTasks = tasks.filter((t) => t.id !== id);
+      await writeTasks(filteredTasks);
+      return res.json({ success: true, deleted: true });
+    } else {
+      let cleanTitle = task.title;
+      const prefixes = ["[IA: Listo para verificar]", "[IA: Listo para verificar (V2)]", "[IA: Ajustes Solicitados]"];
+      for (const prefix of prefixes) {
+        if (cleanTitle.startsWith(prefix)) {
+          cleanTitle = cleanTitle.substring(prefix.length).trim();
+        }
+      }
+      task.title = cleanTitle;
+      task.status = "todo";
+      task.originalBranch = undefined;
+      task.hasStashedChanges = undefined;
+      task.aiFeedback = undefined;
+      await writeTasks(tasks);
+      res.json({ success: true, status: "todo" });
+    }
+  } catch (err: any) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Endpoint: Enviar comentarios de ajuste (Feedback) a la IA
+app.post("/api/dev/tasks/:id/feedback", async (req, res) => {
+  if (process.env.NODE_ENV === "production") {
+    return res.status(403).json({ error: "No permitido en producción" });
+  }
+  try {
+    const { id } = req.params;
+    const { feedback } = req.body;
+
+    if (!feedback || typeof feedback !== "string" || !feedback.trim()) {
+      return res.status(400).json({ error: "El comentario no puede estar vacío." });
+    }
+
+    const tasks = await readTasks();
+    const taskIndex = tasks.findIndex((t) => t.id === id);
+    if (taskIndex === -1) {
+      return res.status(404).json({ error: "Tarea no encontrada." });
+    }
+
+    const task = tasks[taskIndex];
+    const originalBranch = task.originalBranch || "main";
+
+    // Volver a la rama original
+    await runGit(`git checkout ${originalBranch}`);
+
+    // Deshacer el stash
+    if (task.hasStashedChanges) {
+      try {
+        console.log("Popping preview stash on feedback submission...");
+        await runGit("git stash pop");
+      } catch (stashErr) {
+        console.warn("Failed to pop stash on feedback.", stashErr);
+      }
+    }
+
+    let cleanTitle = task.title;
+    const prefixes = ["[IA: Listo para verificar]", "[IA: Listo para verificar (V2)]", "[IA: Ajustes Solicitados]"];
+    for (const prefix of prefixes) {
+      if (cleanTitle.startsWith(prefix)) {
+        cleanTitle = cleanTitle.substring(prefix.length).trim();
+      }
+    }
+
+    task.title = `[IA: Ajustes Solicitados] ${cleanTitle}`;
+    task.aiFeedback = feedback.trim();
+    task.status = "todo";
+    task.originalBranch = undefined;
+    task.hasStashedChanges = undefined;
+    
+    await writeTasks(tasks);
+    res.json({ success: true, updatedTask: task });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
