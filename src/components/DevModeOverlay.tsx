@@ -1815,7 +1815,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                               {new Date(task.createdAt).toLocaleDateString()}
                             </span>
                                                <div className="flex items-center gap-2">
-                              {task.selector && (
+                              {task.tab !== "general" && (
                                 <>
                                   <button
                                     onClick={() => handleFocusTask(task)}
