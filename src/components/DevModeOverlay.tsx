@@ -1260,7 +1260,6 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                     {/* Elegant tooltip near the badge at the top-left corner, not covering the container center */}
                     <div className="absolute top-[-28px] left-0 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none z-[84] whitespace-nowrap">
                       <div className="bg-zinc-950/95 text-zinc-250 backdrop-blur-md border border-zinc-800 px-2.5 py-1.5 rounded-xl text-[9px] font-medium shadow-xl">
-                        <span className="font-mono text-purple-400 mr-1.5">#{task.id.substring(0, 4)}</span>
                         {task.title}
                       </div>
                     </div>
@@ -1366,7 +1365,6 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
                   {/* Micro Tooltip on Hover */}
                   <div className="absolute left-1/2 -translate-x-1/2 bottom-8 hidden group-hover:block z-50 bg-zinc-950/95 backdrop-blur-md px-3 py-1.5 rounded-xl border border-zinc-800 text-[10px] text-zinc-200 whitespace-nowrap shadow-2xl">
-                    <span className="font-mono text-purple-400 mr-1.5">#{task.id.substring(0, 4)}</span>
                     <span className="font-medium">{task.title}</span>
                   </div>
 
