@@ -57,6 +57,6 @@ Una herramienta interactiva impulsada por Inteligencia Artificial que recibe cua
 ---
 
 ## ☁️ Despliegue en la Nube (Hosting)
-Este proyecto está configurado para desplegarse mediante integración continua en **Vercel** o **Netlify**. Cada cambio que se empuje a la rama `main` en GitHub actualizará el enlace público del sitio de manera automática en menos de un minuto.
+Este proyecto está configurado para desplegarse mediante integración continua en **Vercel** . Cada cambio que se empuje a la rama `main` en GitHub actualizará el enlace público del sitio de manera automática en menos de un minuto.
 
 
