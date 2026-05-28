@@ -339,14 +339,24 @@ export default function TimelineExplorer({ onRedirectToConcept }: TimelineExplor
 
   // Search filter applied to milestones
   const filteredMilestones = allMilestones.filter((milestone) => {
+    if (!milestone) return false;
     const groupMeta = TRACK_META[milestone.trackId];
+    const q = (searchQuery || "").toLowerCase();
+    
+    const title = (milestone.title || "").toLowerCase();
+    const shortDesc = (milestone.shortDesc || "").toLowerCase();
+    const longDesc = (milestone.longDesc || "").toLowerCase();
+    const yearLabel = (milestone.yearLabel || "").toLowerCase();
+    const facts = Array.isArray(milestone.scientificFacts) ? milestone.scientificFacts : [];
+    const groupLabel = (groupMeta && groupMeta.label || "").toLowerCase();
+
     const matchesSearch = 
-      milestone.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      milestone.shortDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      milestone.longDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      milestone.yearLabel.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      milestone.scientificFacts.some(f => f.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (groupMeta && groupMeta.label.toLowerCase().includes(searchQuery.toLowerCase()));
+      title.includes(q) ||
+      shortDesc.includes(q) ||
+      longDesc.includes(q) ||
+      yearLabel.includes(q) ||
+      facts.some(f => (f || "").toLowerCase().includes(q)) ||
+      groupLabel.includes(q);
     
     // In detallado view, filter also by activeTimelineId
     if (layoutView === "detallado" && !isCompareMode) {

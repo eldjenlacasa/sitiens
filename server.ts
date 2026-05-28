@@ -6,24 +6,60 @@ import { createServer as createViteServer } from "vite";
 import fs from "fs/promises";
 import { fileURLToPath } from "url";
 import os from "os";
-import { exec as execCallback } from "child_process";
+import { execFile as execFileCallback } from "child_process";
 import { promisify } from "util";
 
-const exec = promisify(execCallback);
+const execFile = promisify(execFileCallback);
 
 dotenv.config();
 
 const app = express();
 const PORT = 3000;
 
-// Lazy initialize Gemini clients to prevent crash on empty key
-let aiClient: GoogleGenAI | null = null;
-function getAiClient() {
-  if (!aiClient) {
-    const apiKey = process.env.GEMINI_API_KEY;
-    if (!apiKey) {
-      throw new Error("GEMINI_API_KEY environment variable is not set. Please set it in Settings > Secrets.");
+// Mutex to serialize all database operations and prevent race conditions
+class Mutex {
+  private queue: (() => Promise<any>)[] = [];
+  private locked = false;
+
+  async run<T>(fn: () => Promise<T>): Promise<T> {
+    return new Promise<T>((resolve, reject) => {
+      this.queue.push(async () => {
+        try {
+          const result = await fn();
+          resolve(result);
+        } catch (err) {
+          reject(err);
+        }
+      });
+      this.dequeue();
+    });
+  }
+
+  private async dequeue() {
+    if (this.locked || this.queue.length === 0) return;
+    this.locked = true;
+    const fn = this.queue.shift()!;
+    try {
+      await fn();
+    } finally {
+      this.locked = false;
+      this.dequeue();
     }
+  }
+}
+
+const dbMutex = new Mutex();
+
+// Lazy initialize Gemini clients with hot-swapping capability
+let aiClient: GoogleGenAI | null = null;
+let cachedApiKey: string | null = null;
+
+function getAiClient() {
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    throw new Error("GEMINI_API_KEY environment variable is not set. Please set it in Settings > Secrets.");
+  }
+  if (!aiClient || cachedApiKey !== apiKey) {
     aiClient = new GoogleGenAI({
       apiKey: apiKey,
       httpOptions: {
@@ -32,6 +68,7 @@ function getAiClient() {
         },
       },
     });
+    cachedApiKey = apiKey;
   }
   return aiClient;
 }
@@ -61,7 +98,31 @@ const TASKS_FILE_PATH = path.join(tasksDirectory, "todo.json");
 const BACKUP_DIR = path.join(os.homedir(), ".gemini", "antigravity");
 const BACKUP_FILE_PATH = path.join(BACKUP_DIR, "todo_backup.json");
 
-// Helper to read tasks with automatic recovery from backup
+// Helper: Atomic File Writer to prevent JSON truncation/corruption
+async function atomicWriteFile(filePath: string, data: string): Promise<void> {
+  const tempPath = `${filePath}.tmp`;
+  await fs.writeFile(tempPath, data, "utf-8");
+  try {
+    await fs.rename(tempPath, filePath);
+  } catch (err) {
+    // Windows fallback in case of locking issues
+    await fs.copyFile(tempPath, filePath);
+    await fs.unlink(tempPath);
+  }
+}
+
+// Secure Git command execution using execFile (avoids shell injection)
+async function runGitSecure(args: string[]): Promise<{ stdout: string; stderr: string }> {
+  try {
+    const { stdout, stderr } = await execFile("git", args, { cwd: tasksDirectory });
+    return { stdout: stdout.trim(), stderr: stderr.trim() };
+  } catch (err: any) {
+    console.error(`Error running Git command: git ${args.join(" ")}`, err);
+    throw new Error(`Git error: ${err.message}`);
+  }
+}
+
+// Helper to read tasks with safe recovery from backup (fixed empty-task false-positive)
 async function readTasks(): Promise<any[]> {
   let workspaceTasks: any[] = [];
   let workspaceReadSuccess = false;
@@ -72,19 +133,18 @@ async function readTasks(): Promise<any[]> {
     workspaceTasks = JSON.parse(data);
     workspaceReadSuccess = true;
   } catch (err) {
-    console.warn("Workspace todo.json not found or failed to read. Attempting backup recovery...");
+    console.warn("Workspace todo.json not found or failed to parse. Attempting backup recovery...");
   }
 
-  // 2. If workspace file read failed OR is empty, attempt recovery from permanent backup
-  if (!workspaceReadSuccess || workspaceTasks.length === 0) {
+  // 2. ONLY attempt backup recovery if the workspace read genuinely failed (missing/corrupted)
+  if (!workspaceReadSuccess) {
     try {
       const backupData = await fs.readFile(BACKUP_FILE_PATH, "utf-8");
       const backupTasks = JSON.parse(backupData);
       
-      if (Array.isArray(backupTasks) && backupTasks.length > 0) {
+      if (Array.isArray(backupTasks)) {
         console.log(`Successfully recovered ${backupTasks.length} tasks from AppData backup! Syncing to workspace.`);
-        // Auto-restore back to workspace todo.json
-        await fs.writeFile(TASKS_FILE_PATH, JSON.stringify(backupTasks, null, 2), "utf-8");
+        await atomicWriteFile(TASKS_FILE_PATH, JSON.stringify(backupTasks, null, 2));
         return backupTasks;
       }
     } catch (backupErr) {
@@ -95,7 +155,7 @@ async function readTasks(): Promise<any[]> {
   return workspaceTasks;
 }
 
-// Helper to write tasks with dual-write replication (Workspace + Permanent Backup)
+// Helper to write tasks with dual-write replication and atomic safety
 async function writeTasks(tasks: any[]): Promise<boolean> {
   try {
     if (process.env.NODE_ENV === "production") {
@@ -103,13 +163,13 @@ async function writeTasks(tasks: any[]): Promise<boolean> {
       return false;
     }
 
-    // 1. Write to the workspace todo.json
-    await fs.writeFile(TASKS_FILE_PATH, JSON.stringify(tasks, null, 2), "utf-8");
+    // 1. Write atomically to the workspace todo.json
+    await atomicWriteFile(TASKS_FILE_PATH, JSON.stringify(tasks, null, 2));
 
-    // 2. Replication: Write duplicate copy to user's App Data Directory backup
+    // 2. Replication: Write duplicate copy atomically to permanent backup
     try {
       await fs.mkdir(BACKUP_DIR, { recursive: true });
-      await fs.writeFile(BACKUP_FILE_PATH, JSON.stringify(tasks, null, 2), "utf-8");
+      await atomicWriteFile(BACKUP_FILE_PATH, JSON.stringify(tasks, null, 2));
     } catch (backupErr) {
       console.error("Failed to write tasks to permanent backup path:", backupErr);
     }
@@ -121,9 +181,10 @@ async function writeTasks(tasks: any[]): Promise<boolean> {
   }
 }
 
-// Express Endpoints for Dev Tasks
+// Express Endpoints for Dev Tasks wrapped in database Mutex to prevent race conditions
+
 app.get("/api/dev/tasks", async (req, res) => {
-  const tasks = await readTasks();
+  const tasks = await dbMutex.run(async () => readTasks());
   res.json(tasks);
 });
 
@@ -137,31 +198,35 @@ app.post("/api/dev/tasks", async (req, res) => {
       return res.status(400).json({ error: "El título de la tarea es obligatorio." });
     }
 
-    const tasks = await readTasks();
-    const newTask = {
-      id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
-      title: title.trim(),
-      description: (description || "").trim(),
-      tab: tab || "general",
-      x: typeof x === "number" ? x : undefined,
-      y: typeof y === "number" ? y : undefined,
-      w: typeof w === "number" ? w : undefined,
-      h: typeof h === "number" ? h : undefined,
-      selector: typeof selector === "string" ? selector : undefined,
-      rx: typeof rx === "number" ? rx : undefined,
-      ry: typeof ry === "number" ? ry : undefined,
-      rw: typeof rw === "number" ? rw : undefined,
-      rh: typeof rh === "number" ? rh : undefined,
-      priority: priority || "medium",
-      status: status || "todo",
-      createdAt: new Date().toISOString(),
-    };
+    const newTask = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const createdTask = {
+        id: Math.random().toString(36).substring(2, 9) + Date.now().toString(36),
+        title: title.trim(),
+        description: (description || "").trim(),
+        tab: tab || "general",
+        x: typeof x === "number" ? x : undefined,
+        y: typeof y === "number" ? y : undefined,
+        w: typeof w === "number" ? w : undefined,
+        h: typeof h === "number" ? h : undefined,
+        selector: typeof selector === "string" ? selector : undefined,
+        rx: typeof rx === "number" ? rx : undefined,
+        ry: typeof ry === "number" ? ry : undefined,
+        rw: typeof rw === "number" ? rw : undefined,
+        rh: typeof rh === "number" ? rh : undefined,
+        priority: priority || "medium",
+        status: status || "todo",
+        createdAt: new Date().toISOString(),
+      };
 
-    tasks.push(newTask);
-    const success = await writeTasks(tasks);
-    if (!success) {
-      return res.status(500).json({ error: "No se pudo guardar la tarea en el archivo." });
-    }
+      tasks.push(createdTask);
+      const success = await writeTasks(tasks);
+      if (!success) {
+        throw new Error("No se pudo guardar la tarea en el archivo.");
+      }
+      return createdTask;
+    });
+
     res.status(201).json(newTask);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -172,35 +237,48 @@ app.put("/api/dev/tasks/:id", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  // Route ID Sanitization
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
     const { title, description, priority, status, selector, rx, ry, rw, rh } = req.body;
 
-    const tasks = await readTasks();
-    const taskIndex = tasks.findIndex((t) => t.id === id);
-    if (taskIndex === -1) {
+    const updated = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const taskIndex = tasks.findIndex((t) => t.id === id);
+      if (taskIndex === -1) {
+        return null;
+      }
+
+      const updatedTask = {
+        ...tasks[taskIndex],
+        title: title !== undefined ? title.trim() : tasks[taskIndex].title,
+        description: description !== undefined ? description.trim() : tasks[taskIndex].description,
+        priority: priority !== undefined ? priority : tasks[taskIndex].priority,
+        status: status !== undefined ? status : tasks[taskIndex].status,
+        selector: selector !== undefined ? selector : tasks[taskIndex].selector,
+        rx: rx !== undefined ? rx : tasks[taskIndex].rx,
+        ry: ry !== undefined ? ry : tasks[taskIndex].ry,
+        rw: rw !== undefined ? rw : tasks[taskIndex].rw,
+        rh: rh !== undefined ? rh : tasks[taskIndex].rh,
+      };
+
+      tasks[taskIndex] = updatedTask;
+      const success = await writeTasks(tasks);
+      if (!success) {
+        throw new Error("No se pudo guardar la tarea actualizada.");
+      }
+      return updatedTask;
+    });
+
+    if (!updated) {
       return res.status(404).json({ error: "Tarea no encontrada." });
     }
-
-    const updatedTask = {
-      ...tasks[taskIndex],
-      title: title !== undefined ? title.trim() : tasks[taskIndex].title,
-      description: description !== undefined ? description.trim() : tasks[taskIndex].description,
-      priority: priority !== undefined ? priority : tasks[taskIndex].priority,
-      status: status !== undefined ? status : tasks[taskIndex].status,
-      selector: selector !== undefined ? selector : tasks[taskIndex].selector,
-      rx: rx !== undefined ? rx : tasks[taskIndex].rx,
-      ry: ry !== undefined ? ry : tasks[taskIndex].ry,
-      rw: rw !== undefined ? rw : tasks[taskIndex].rw,
-      rh: rh !== undefined ? rh : tasks[taskIndex].rh,
-    };
-
-    tasks[taskIndex] = updatedTask;
-    const success = await writeTasks(tasks);
-    if (!success) {
-      return res.status(500).json({ error: "No se pudo guardar la tarea actualizada." });
-    }
-    res.json(updatedTask);
+    res.json(updated);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -210,18 +288,30 @@ app.delete("/api/dev/tasks/:id", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
-    const tasks = await readTasks();
-    const filteredTasks = tasks.filter((t) => t.id !== id);
+    const deleted = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const filteredTasks = tasks.filter((t) => t.id !== id);
 
-    if (tasks.length === filteredTasks.length) {
+      if (tasks.length === filteredTasks.length) {
+        return false;
+      }
+
+      const success = await writeTasks(filteredTasks);
+      if (!success) {
+        throw new Error("No se pudo eliminar la tarea.");
+      }
+      return true;
+    });
+
+    if (!deleted) {
       return res.status(404).json({ error: "Tarea no encontrada." });
-    }
-
-    const success = await writeTasks(filteredTasks);
-    if (!success) {
-      return res.status(500).json({ error: "No se pudo eliminar la tarea." });
     }
     res.json({ message: "Tarea eliminada correctamente." });
   } catch (err: any) {
@@ -229,25 +319,14 @@ app.delete("/api/dev/tasks/:id", async (req, res) => {
   }
 });
 
-// Helper for running Git commands securely in project root
-async function runGit(cmd: string): Promise<{ stdout: string; stderr: string }> {
-  try {
-    const { stdout, stderr } = await exec(cmd, { cwd: tasksDirectory });
-    return { stdout: stdout.trim(), stderr: stderr.trim() };
-  } catch (err: any) {
-    console.error(`Error running Git command: ${cmd}`, err);
-    throw new Error(`Git error: ${err.message}`);
-  }
-}
-
-// Endpoint: Obtener el estado actual de Git
+// Endpoint: Obtener el estado actual de Git (Safe execFile wrapper)
 app.get("/api/dev/git-status", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
   try {
-    const { stdout: branch } = await runGit("git branch --show-current");
-    const { stdout: status } = await runGit("git status --porcelain");
+    const { stdout: branch } = await runGitSecure(["branch", "--show-current"]);
+    const { stdout: status } = await runGitSecure(["status", "--porcelain"]);
     res.json({
       branch,
       hasUncommittedChanges: status.length > 0,
@@ -262,46 +341,58 @@ app.post("/api/dev/tasks/:id/preview", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
-    const tasks = await readTasks();
-    const taskIndex = tasks.findIndex((t) => t.id === id);
-    if (taskIndex === -1) {
+    const taskResult = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) return null;
+      return { task: tasks[index], index, tasks };
+    });
+
+    if (!taskResult) {
       return res.status(404).json({ error: "Tarea no encontrada." });
     }
 
-    const task = tasks[taskIndex];
+    const { task, index, tasks } = taskResult;
     const branchName = `ai-review-${id}`;
 
-    // Verificar si la rama existe localmente
+    // Verificar si la rama existe localmente (con execFile wrapper, safe and shell-bypass)
     try {
-      await runGit(`git show-ref --verify refs/heads/${branchName}`);
+      await runGitSecure(["show-ref", "--verify", `refs/heads/${branchName}`]);
     } catch (e) {
       return res.status(400).json({ error: `La rama ${branchName} para previsualizar no existe.` });
     }
 
-    // Obtener la rama actual para recordarla como originalBranch
-    const { stdout: currentBranch } = await runGit("git branch --show-current");
+    const { stdout: currentBranch } = await runGitSecure(["branch", "--show-current"]);
     
-    // Si ya estamos en la rama de previsualización, no hacemos nada
     if (currentBranch === branchName) {
       return res.json({ success: true, activeBranch: branchName });
     }
 
     task.originalBranch = currentBranch;
-    await writeTasks(tasks);
 
     // Si el usuario tiene cambios locales sin confirmar, los stasheamos
-    const { stdout: status } = await runGit("git status --porcelain");
+    const { stdout: status } = await runGitSecure(["status", "--porcelain"]);
     if (status.length > 0) {
       console.log("Stashing local changes before preview...");
-      await runGit(`git stash save "AI Preview Auto-Stash [${id}]"`);
+      await runGitSecure(["stash", "save", `AI Preview Auto-Stash [${id}]`]);
       task.hasStashedChanges = true;
-      await writeTasks(tasks);
     }
 
+    // Guardar cambios del originalBranch / hasStashedChanges antes de cambiar rama
+    await dbMutex.run(async () => {
+      tasks[index] = task;
+      await writeTasks(tasks);
+    });
+
     // Hacer el checkout de la rama de la IA
-    await runGit(`git checkout ${branchName}`);
+    await runGitSecure(["checkout", branchName]);
     res.json({ success: true, activeBranch: branchName });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -313,28 +404,38 @@ app.post("/api/dev/tasks/:id/approve", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
-    const tasks = await readTasks();
-    const taskIndex = tasks.findIndex((t) => t.id === id);
-    if (taskIndex === -1) {
+    const taskResult = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) return null;
+      return { task: tasks[index], index, tasks };
+    });
+
+    if (!taskResult) {
       return res.status(404).json({ error: "Tarea no encontrada." });
     }
 
-    const task = tasks[taskIndex];
+    const { task, index, tasks } = taskResult;
     const branchName = `ai-review-${id}`;
     const originalBranch = task.originalBranch || "main";
 
     // Cambiar de vuelta a la rama original del usuario
-    await runGit(`git checkout ${originalBranch}`);
+    await runGitSecure(["checkout", originalBranch]);
 
     // Fusionar la rama de la IA en la rama original
     console.log(`Merging ${branchName} into ${originalBranch}...`);
-    await runGit(`git merge ${branchName} --no-edit -m "Merge branch '${branchName}' via AI Dev Board"`);
+    await runGitSecure(["merge", branchName, "--no-edit", "-m", `Merge branch '${branchName}' via AI Dev Board`]);
 
     // Eliminar la rama temporal
     try {
-      await runGit(`git branch -D ${branchName}`);
+      await runGitSecure(["branch", "-D", branchName]);
     } catch (e) {
       console.warn("Failed to delete merged branch:", e);
     }
@@ -343,7 +444,7 @@ app.post("/api/dev/tasks/:id/approve", async (req, res) => {
     if (task.hasStashedChanges) {
       try {
         console.log("Popping preview stash...");
-        await runGit("git stash pop");
+        await runGitSecure(["stash", "pop"]);
       } catch (stashErr) {
         console.warn("Failed to pop stash, local changes might be conflicted. Stash remains safe in Git history.", stashErr);
       }
@@ -363,7 +464,11 @@ app.post("/api/dev/tasks/:id/approve", async (req, res) => {
     task.originalBranch = undefined;
     task.hasStashedChanges = undefined;
     task.aiFeedback = undefined;
-    await writeTasks(tasks);
+
+    await dbMutex.run(async () => {
+      tasks[index] = task;
+      await writeTasks(tasks);
+    });
 
     res.json({ success: true, status: "done" });
   } catch (err: any) {
@@ -376,24 +481,34 @@ app.post("/api/dev/tasks/:id/reject", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
-    const tasks = await readTasks();
-    const taskIndex = tasks.findIndex((t) => t.id === id);
-    if (taskIndex === -1) {
+    const taskResult = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) return null;
+      return { task: tasks[index], index, tasks };
+    });
+
+    if (!taskResult) {
       return res.status(404).json({ error: "Tarea no encontrada." });
     }
 
-    const task = tasks[taskIndex];
+    const { task, index, tasks } = taskResult;
     const branchName = `ai-review-${id}`;
     const originalBranch = task.originalBranch || "main";
 
     // Volver a la rama original
-    await runGit(`git checkout ${originalBranch}`);
+    await runGitSecure(["checkout", originalBranch]);
 
     // Borrar la rama de la IA
     try {
-      await runGit(`git branch -D ${branchName}`);
+      await runGitSecure(["branch", "-D", branchName]);
     } catch (e) {
       console.warn(`Branch ${branchName} did not exist or could not be deleted.`);
     }
@@ -402,33 +517,36 @@ app.post("/api/dev/tasks/:id/reject", async (req, res) => {
     if (task.hasStashedChanges) {
       try {
         console.log("Popping preview stash on reject...");
-        await runGit("git stash pop");
+        await runGitSecure(["stash", "pop"]);
       } catch (stashErr) {
         console.warn("Failed to pop stash on reject.", stashErr);
       }
     }
 
-    // Si es una sugerencia pura de la IA, la eliminamos; de lo contrario restauramos el TODO
-    if (task.title.startsWith("[IA: Sugerencia de Diseño]")) {
-      const filteredTasks = tasks.filter((t) => t.id !== id);
-      await writeTasks(filteredTasks);
-      return res.json({ success: true, deleted: true });
-    } else {
-      let cleanTitle = task.title;
-      const prefixes = ["[IA: Listo para verificar]", "[IA: Listo para verificar (V2)]", "[IA: Ajustes Solicitados]"];
-      for (const prefix of prefixes) {
-        if (cleanTitle.startsWith(prefix)) {
-          cleanTitle = cleanTitle.substring(prefix.length).trim();
+    await dbMutex.run(async () => {
+      // Si es una sugerencia pura de la IA, la eliminamos; de lo contrario restauramos el TODO
+      if (task.title.startsWith("[IA: Sugerencia de Diseño]")) {
+        const filteredTasks = tasks.filter((t) => t.id !== id);
+        await writeTasks(filteredTasks);
+      } else {
+        let cleanTitle = task.title;
+        const prefixes = ["[IA: Listo para verificar]", "[IA: Listo para verificar (V2)]", "[IA: Ajustes Solicitados]"];
+        for (const prefix of prefixes) {
+          if (cleanTitle.startsWith(prefix)) {
+            cleanTitle = cleanTitle.substring(prefix.length).trim();
+          }
         }
+        task.title = cleanTitle;
+        task.status = "todo";
+        task.originalBranch = undefined;
+        task.hasStashedChanges = undefined;
+        task.aiFeedback = undefined;
+        tasks[index] = task;
+        await writeTasks(tasks);
       }
-      task.title = cleanTitle;
-      task.status = "todo";
-      task.originalBranch = undefined;
-      task.hasStashedChanges = undefined;
-      task.aiFeedback = undefined;
-      await writeTasks(tasks);
-      res.json({ success: true, status: "todo" });
-    }
+    });
+
+    res.json({ success: true, status: "todo" });
   } catch (err: any) {
     res.status(500).json({ error: err.message });
   }
@@ -439,31 +557,41 @@ app.post("/api/dev/tasks/:id/feedback", async (req, res) => {
   if (process.env.NODE_ENV === "production") {
     return res.status(403).json({ error: "No permitido en producción" });
   }
+  
+  const { id } = req.params;
+  if (!id || typeof id !== "string" || /[^a-zA-Z0-9_-]/.test(id)) {
+    return res.status(400).json({ error: "ID de tarea inválido o inseguro." });
+  }
+
   try {
-    const { id } = req.params;
     const { feedback } = req.body;
 
     if (!feedback || typeof feedback !== "string" || !feedback.trim()) {
       return res.status(400).json({ error: "El comentario no puede estar vacío." });
     }
 
-    const tasks = await readTasks();
-    const taskIndex = tasks.findIndex((t) => t.id === id);
-    if (taskIndex === -1) {
+    const taskResult = await dbMutex.run(async () => {
+      const tasks = await readTasks();
+      const index = tasks.findIndex((t) => t.id === id);
+      if (index === -1) return null;
+      return { task: tasks[index], index, tasks };
+    });
+
+    if (!taskResult) {
       return res.status(404).json({ error: "Tarea no encontrada." });
     }
 
-    const task = tasks[taskIndex];
+    const { task, index, tasks } = taskResult;
     const originalBranch = task.originalBranch || "main";
 
     // Volver a la rama original
-    await runGit(`git checkout ${originalBranch}`);
+    await runGitSecure(["checkout", originalBranch]);
 
     // Deshacer el stash
     if (task.hasStashedChanges) {
       try {
         console.log("Popping preview stash on feedback submission...");
-        await runGit("git stash pop");
+        await runGitSecure(["stash", "pop"]);
       } catch (stashErr) {
         console.warn("Failed to pop stash on feedback.", stashErr);
       }
@@ -483,7 +611,11 @@ app.post("/api/dev/tasks/:id/feedback", async (req, res) => {
     task.originalBranch = undefined;
     task.hasStashedChanges = undefined;
     
-    await writeTasks(tasks);
+    await dbMutex.run(async () => {
+      tasks[index] = task;
+      await writeTasks(tasks);
+    });
+
     res.json({ success: true, updatedTask: task });
   } catch (err: any) {
     res.status(500).json({ error: err.message });

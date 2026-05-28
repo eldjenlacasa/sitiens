@@ -27,6 +27,7 @@ import SocraticReflection from "./components/SocraticReflection";
 import { motion, AnimatePresence } from "motion/react";
 import { CORE_NODES } from "./types";
 import DevModeOverlay from "./components/DevModeOverlay";
+import DevErrorBoundary from "./components/DevErrorBoundary";
 
 type TabType = "grafo" | "cronologia" | "dialectica" | "calculadora" | "validador";
 
@@ -87,7 +88,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-800 dark:text-zinc-200 selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-white flex flex-col justify-between transition-colors duration-300 pb-24 md:pb-0">
+    <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950 font-sans text-zinc-800 dark:text-zinc-200 selection:bg-zinc-200 dark:selection:bg-zinc-800 selection:text-zinc-900 dark:selection:text-white flex flex-col justify-between transition-colors duration-300 pb-24 md:pb-0 dev-sidebar-resizer">
       {/* Dynamic Upper Ambient Border Glow */}
       <div className="absolute top-0 left-0 right-0 h-[450px] bg-radial from-purple-950/5 dark:from-purple-950/15 via-transparent to-transparent pointer-events-none z-0" />
 
@@ -305,7 +306,9 @@ export default function App() {
         )}
 
         {import.meta.env.DEV && (
-          <DevModeOverlay activeTab={activeTab} setActiveTab={setActiveTab} />
+          <DevErrorBoundary>
+            <DevModeOverlay activeTab={activeTab} setActiveTab={setActiveTab} />
+          </DevErrorBoundary>
         )}
       </main>
 

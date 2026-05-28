@@ -235,10 +235,11 @@ export default function SocraticReflection() {
       >
         <button
           onClick={handleShow}
-          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-semibold text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-white bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 border border-zinc-200 dark:border-zinc-800 transition-all cursor-pointer shadow-xs"
+          className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-[10px] font-bold font-mono text-zinc-450 hover:text-zinc-950 dark:text-zinc-400 dark:hover:text-white border border-zinc-200 dark:border-zinc-800 hover:bg-zinc-50 dark:hover:bg-zinc-950 transition-all cursor-pointer select-none active:scale-98 shadow-xs"
+          title="Restaurar preguntas de reflexión socrática"
         >
-          <RotateCcw className="w-3.5 h-3.5" />
-          <span>Restaurar preguntas de reflexión socrática</span>
+          <Eye className="w-3.5 h-3.5 text-purple-500 dark:text-purple-400" />
+          <span>MOSTRAR GUÍA DE REFLEXIÓN</span>
         </button>
       </motion.div>
     );

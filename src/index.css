@@ -65,3 +65,9 @@
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--text-muted);
 }
+
+/* Dynamic developer sidebar resizing transition */
+.dev-sidebar-resizer {
+  transition: padding-right 0.35s cubic-bezier(0.25, 0.8, 0.25, 1);
+  padding-right: var(--dev-sidebar-width, 0px);
+}

@@ -92,11 +92,18 @@ export default function ExcusesDilemmas({ onAnalyzeTrigger }: ExcusesDilemmasPro
   };
 
   const filteredDilemmas = DILEMMAS_DATA.filter((dilemma) => {
+    if (!dilemma) return false;
+    const q = (searchQuery || "").toLowerCase();
+    const title = (dilemma.title || "").toLowerCase();
+    const popularStatement = (dilemma.popularStatement || "").toLowerCase();
+    const scientificDeconstruction = (dilemma.scientificDeconstruction || "").toLowerCase();
+    const philosophicalDeconstruction = (dilemma.philosophicalDeconstruction || "").toLowerCase();
+
     const matchesSearch =
-      dilemma.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dilemma.popularStatement.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dilemma.scientificDeconstruction.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      dilemma.philosophicalDeconstruction.toLowerCase().includes(searchQuery.toLowerCase());
+      title.includes(q) ||
+      popularStatement.includes(q) ||
+      scientificDeconstruction.includes(q) ||
+      philosophicalDeconstruction.includes(q);
     
     const matchesCategory = selectedCategory === "all" || dilemma.category === selectedCategory;
     const matchesConsensus = selectedConsensus === "all" || dilemma.consensus === selectedConsensus;

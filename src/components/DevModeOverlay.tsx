@@ -172,6 +172,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
   const healedTasksRef = useRef<Set<string>>(new Set());
   const [isPinningMode, setIsPinningMode] = useState<boolean>(false);
   const [tasks, setTasks] = useState<DevTask[]>([]);
+  const [pendingDeleteTask, setPendingDeleteTask] = useState<DevTask | null>(null);
+  const pendingDeleteTaskRef = useRef<DevTask | null>(null);
+  pendingDeleteTaskRef.current = pendingDeleteTask;
+  const deleteTimerRef = useRef<NodeJS.Timeout | null>(null);
   const [loading, setLoading] = useState<boolean>(false);
   const [highlightedPinId, setHighlightedPinId] = useState<string | null>(null);
 
@@ -190,6 +194,22 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
       localStorage.removeItem("dev-mode-preview-task-id");
     }
   }, [activePreviewTaskId]);
+
+  // Flush pending delete on unmount/cleanup
+  useEffect(() => {
+    return () => {
+      if (deleteTimerRef.current) {
+        clearTimeout(deleteTimerRef.current);
+      }
+      const taskToDelete = pendingDeleteTaskRef.current;
+      if (taskToDelete) {
+        fetch(`/api/dev/tasks/${taskToDelete.id}`, {
+          method: "DELETE",
+          keepalive: true
+        }).catch(err => console.error("Error flushing delete on unmount:", err));
+      }
+    };
+  }, []);
 
   // Form states
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
@@ -211,17 +231,25 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
   // Detail / Editing Modal states
   const [selectedTask, setSelectedTask] = useState<DevTask | null>(null);
+  const prevSelectedTaskIdRef = useRef<string | null>(null);
   const [isEditingTask, setIsEditingTask] = useState<boolean>(false);
+  const [showMapPopover, setShowMapPopover] = useState<boolean>(false);
   const [editTitle, setEditTitle] = useState<string>("");
   const [editDesc, setEditDesc] = useState<string>("");
   const [editPriority, setEditPriority] = useState<"low" | "normal" | "medium" | "high">("normal");
   const [editStatus, setEditStatus] = useState<"todo" | "in-progress" | "done">("todo");
+  const [editTab, setEditTab] = useState<string>("general");
 
   // Sidebar Filter states
   const [filterStatus, setFilterStatus] = useState<string>("all");
   const [filterPriority, setFilterPriority] = useState<string>("all");
   const [filterTab, setFilterTab] = useState<string>("all");
   const [searchQuery, setSearchQuery] = useState<string>("");
+  const [hoveredFilter, setHoveredFilter] = useState<"estado" | "priority" | "tab" | null>(null);
+  const [hoveredEditFilter, setHoveredEditFilter] = useState<"estado" | "priority" | "tab" | null>(null);
+  const [hoveredStatusOption, setHoveredStatusOption] = useState<string | null>(null);
+  const [hoveredPriorityOption, setHoveredPriorityOption] = useState<string | null>(null);
+  const [hoveredTabOption, setHoveredTabOption] = useState<string | null>(null);
 
   // Target ref to measure relative coordinates on main
   const mainRef = useRef<HTMLDivElement | null>(null);
@@ -237,7 +265,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
   // Responsive & Coordinate Sync States
   const [newPinSelector, setNewPinSelector] = useState<string | undefined>(undefined);
-  const [newPinRelative, setNewPinRelative] = useState<{ rx: number; ry: number } | null>(null);
+  const [newPinRelative, setNewPinRelative] = useState<{ rx: number; ry: number; rw?: number; rh?: number } | null>(null);
   
   interface PinCoord {
     left: number;
@@ -600,9 +628,6 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
     // Listen to window resizing with throttle
     window.addEventListener("resize", recalculateCoordsThrottled, { passive: true });
-    
-    // Listen to ALL scrolls on the page (capture: true) so nested scrolling elements trigger recalculation with throttle
-    window.addEventListener("scroll", recalculateCoordsThrottled, { capture: true, passive: true });
 
     // Set up MutationObserver to monitor DOM mutations (tabs, expanded cards, layout shifts)
     const observer = new MutationObserver((mutations) => {
@@ -623,7 +648,6 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
     return () => {
       window.removeEventListener("resize", recalculateCoordsThrottled);
-      window.removeEventListener("scroll", recalculateCoordsThrottled, true);
       observer.disconnect();
       if (throttleTimeoutRef.current) {
         clearTimeout(throttleTimeoutRef.current);
@@ -814,6 +838,59 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
+  // Dedicated effect to handle Esc key and clicking outside to deselect active task
+  useEffect(() => {
+    if (!isActive) return;
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        setSelectedTask(null);
+        setIsEditingTask(false);
+      }
+    };
+
+    const handleGlobalClick = (e: MouseEvent) => {
+      if (!selectedTask) return;
+
+      const target = e.target as HTMLElement;
+
+      // Do NOT deselect if click is inside the developer overlay sidebar panel, floating UI, or active trigger
+      if (target.closest(".dev-mode-ui") || target.closest(".dev-mode-trigger")) return;
+
+      // Do NOT deselect if click is on any pin or pin preview
+      if (target.closest("[id^='dev-pin-']") || target.closest("#dev-pin-preview")) return;
+
+      setSelectedTask(null);
+      setIsEditingTask(false);
+    };
+
+    window.addEventListener("keydown", handleGlobalKeyDown);
+    window.addEventListener("mousedown", handleGlobalClick, { capture: true });
+
+    return () => {
+      window.removeEventListener("keydown", handleGlobalKeyDown);
+      window.removeEventListener("mousedown", handleGlobalClick, { capture: true });
+    };
+  }, [isActive, selectedTask]);
+
+  // Effect to prevent scroll-jump when deselecting/collapsing a very long task card
+  useEffect(() => {
+    if (selectedTask) {
+      prevSelectedTaskIdRef.current = selectedTask.id;
+    } else if (prevSelectedTaskIdRef.current) {
+      const collapsedTaskId = prevSelectedTaskIdRef.current;
+      prevSelectedTaskIdRef.current = null;
+
+      // Wait a tick for layout shift to complete, then scroll the collapsed card smoothly back into view
+      setTimeout(() => {
+        const cardEl = document.getElementById(`dev-card-${collapsedTaskId}`);
+        if (cardEl) {
+          cardEl.scrollIntoView({ behavior: "smooth", block: "nearest" });
+        }
+      }, 80);
+    }
+  }, [selectedTask]);
+
   // 2.5 Cancel pinning or inline creation with Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -842,8 +919,12 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
     const mainEl = document.querySelector("main");
     if (mainEl) {
       mainRef.current = mainEl as HTMLDivElement;
+      // Force position: relative on the main element when developer mode is active
+      if (isActive) {
+        mainEl.style.position = "relative";
+      }
     }
-  }, [activeTab]);
+  }, [activeTab, isActive]);
 
   // Helper to convert viewport coordinates to main-relative percentages (0-100)
   const getRelativeCoords = (clientX: number, clientY: number) => {
@@ -930,9 +1011,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
         // Smart Snapping element detection
         const target = document.elementFromPoint(e.clientX, e.clientY);
-        if (target) {
+        if (target && !target.closest(".dev-mode-ui")) {
           const snappedEl = target.closest("section, article, p, h1, h2, h3, header, footer, button, .card, [class*='card'], [class*='p-'], [class*='px-']") as HTMLElement | null;
-          if (snappedEl && mainRef.current && mainRef.current.contains(snappedEl) && snappedEl !== mainRef.current && snappedEl.parentElement !== mainRef.current) {
+          if (snappedEl && !snappedEl.closest(".dev-mode-ui") && mainRef.current && mainRef.current.contains(snappedEl) && snappedEl !== mainRef.current && snappedEl.parentElement !== mainRef.current) {
             const sRect = snappedEl.getBoundingClientRect();
             setSnappedBounds({
               left: sRect.left,
@@ -943,6 +1024,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
           } else {
             setSnappedBounds(null);
           }
+        } else {
+          setSnappedBounds(null);
         }
       }
     };
@@ -1026,8 +1109,31 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
           
           setNewPinCoords({ x: startCoords.x, y: startCoords.y });
           setNewPinDims({ w: Math.abs(endCoords.x - startCoords.x), h: Math.abs(endCoords.y - startCoords.y) });
-          setNewPinSelector(undefined);
-          setNewPinRelative(null);
+          
+          // Discover and anchor marquee drag relative coords immediately
+          const centerX = currentDragRect.left + currentDragRect.width / 2;
+          const centerY = currentDragRect.top + currentDragRect.height / 2;
+          const targetElement = document.elementFromPoint(centerX, centerY) as HTMLElement | null;
+          
+          if (targetElement) {
+            const clickedEl = targetElement.closest("section, article, p, h1, h2, h3, header, footer, button, .card, [class*='card'], [class*='p-'], [class*='px-'], div") as HTMLElement | null;
+            if (clickedEl && !clickedEl.closest(".dev-mode-ui") && mainRef.current && mainRef.current.contains(clickedEl)) {
+              const elRect = clickedEl.getBoundingClientRect();
+              const rx = ((currentDragRect.left - elRect.left) / elRect.width) * 100;
+              const ry = ((currentDragRect.top - elRect.top) / elRect.height) * 100;
+              const rw = (currentDragRect.width / elRect.width) * 100;
+              const rh = (currentDragRect.height / elRect.height) * 100;
+              setNewPinSelector(getUniqueSelector(clickedEl));
+              setNewPinRelative({ rx, ry, rw, rh });
+            } else {
+              setNewPinSelector(undefined);
+              setNewPinRelative(null);
+            }
+          } else {
+            setNewPinSelector(undefined);
+            setNewPinRelative(null);
+          }
+          
           setFormTab(activeTab);
 
           if (isCreatingInline) {
@@ -1051,9 +1157,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
           
           // Find the unique selector for the snapped element
           const targetElement = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-          if (targetElement) {
+          if (targetElement && !targetElement.closest(".dev-mode-ui")) {
             const snappedEl = targetElement.closest("section, article, p, h1, h2, h3, header, footer, button, .card, [class*='card'], [class*='p-'], [class*='px-']") as HTMLElement | null;
-            if (snappedEl) {
+            if (snappedEl && !snappedEl.closest(".dev-mode-ui")) {
               setNewPinSelector(getUniqueSelector(snappedEl));
             } else {
               setNewPinSelector(undefined);
@@ -1083,9 +1189,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
           
           // Point pin anchored to the clicked element
           const targetElement = document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null;
-          if (targetElement) {
+          if (targetElement && !targetElement.closest(".dev-mode-ui")) {
             const clickedEl = targetElement.closest("section, article, p, h1, h2, h3, header, footer, button, .card, [class*='card'], [class*='p-'], [class*='px-'], div") as HTMLElement | null;
-            if (clickedEl) {
+            if (clickedEl && !clickedEl.closest(".dev-mode-ui")) {
               const elRect = clickedEl.getBoundingClientRect();
               const rx = ((e.clientX - elRect.left) / elRect.width) * 100;
               const ry = ((e.clientY - elRect.top) / elRect.height) * 100;
@@ -1205,6 +1311,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
       selector: isCreatingGeneral ? undefined : newPinSelector,
       rx: isCreatingGeneral ? undefined : newPinRelative?.rx,
       ry: isCreatingGeneral ? undefined : newPinRelative?.ry,
+      rw: isCreatingGeneral ? undefined : newPinRelative?.rw,
+      rh: isCreatingGeneral ? undefined : newPinRelative?.rh,
       priority: formPriority,
       status: "todo"
     };
@@ -1259,21 +1367,64 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
     }
   };
 
-  // 8. Delete task
-  const handleDeleteTask = async (taskId: string) => {
-    if (!confirm("¿Seguro que quieres eliminar esta nota de desarrollo?")) return;
+  // 8. Delete task with undo (soft-delete / Undo banner)
+  const flushPendingDelete = async () => {
+    if (deleteTimerRef.current) {
+      clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = null;
+    }
+    const taskToDelete = pendingDeleteTaskRef.current;
+    if (!taskToDelete) return;
+    setPendingDeleteTask(null);
     try {
-      const res = await fetch(`/api/dev/tasks/${taskId}`, {
+      await fetch(`/api/dev/tasks/${taskToDelete.id}`, {
         method: "DELETE"
       });
-      if (res.ok) {
-        setTasks(prev => prev.filter(t => t.id !== taskId));
-        setSelectedTask(null);
-        setIsEditingTask(false);
-      }
     } catch (err) {
-      console.error(err);
+      console.error("Error executing pending delete:", err);
     }
+  };
+
+  const handleDeleteTask = async (taskId: string) => {
+    // 1. If there's already a pending delete, flush it immediately!
+    if (pendingDeleteTaskRef.current) {
+      await flushPendingDelete();
+    }
+
+    // 2. Find the task to delete from state
+    const taskToDelete = tasks.find(t => t.id === taskId);
+    if (!taskToDelete) return;
+
+    // 3. Keep a backup and remove it locally from the tasks list
+    setPendingDeleteTask(taskToDelete);
+    setTasks(prev => prev.filter(t => t.id !== taskId));
+    
+    // Close detail view if the deleted task was selected
+    if (selectedTask?.id === taskId) {
+      setSelectedTask(null);
+      setIsEditingTask(false);
+    }
+
+    // 4. Set a timer to execute the delete on server after 5 seconds
+    deleteTimerRef.current = setTimeout(async () => {
+      await flushPendingDelete();
+    }, 5000);
+  };
+
+  const handleUndoDelete = () => {
+    if (deleteTimerRef.current) {
+      clearTimeout(deleteTimerRef.current);
+      deleteTimerRef.current = null;
+    }
+    const taskToRestore = pendingDeleteTask;
+    if (taskToRestore) {
+      setTasks(prev => {
+        return [...prev, taskToRestore];
+      });
+      setSelectedTask(taskToRestore);
+      startEditing(taskToRestore);
+    }
+    setPendingDeleteTask(null);
   };
 
   // 9. Update task details
@@ -1289,14 +1440,15 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
           title: editTitle.trim(),
           description: editDesc.trim(),
           priority: editPriority,
-          status: editStatus
+          status: editStatus,
+          tab: editTab
         })
       });
 
       if (res.ok) {
         const updated = await res.json();
         setTasks(prev => prev.map(t => t.id === selectedTask.id ? updated : t));
-        setSelectedTask(updated);
+        setSelectedTask(null);
         setIsEditingTask(false);
       }
     } catch (err) {
@@ -1307,9 +1459,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
   // 10. Start editing a task
   const startEditing = (task: DevTask) => {
     setEditTitle(task.title);
-    setEditDesc(task.description);
+    setEditDesc(task.description || "");
     setEditPriority(task.priority);
     setEditStatus(task.status);
+    setEditTab(task.tab);
     setIsEditingTask(true);
   };
 
@@ -1522,11 +1675,17 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
   const filteredTasks = scoredTasks
     .filter(item => item && item.matches && item.task)
     .sort((a, b) => {
-      // First sort by search relevance score
+      // 1. Completed tasks (status === "done") go to the very bottom
+      const isDoneA = a.task?.status === "done";
+      const isDoneB = b.task?.status === "done";
+      if (isDoneA !== isDoneB) {
+        return isDoneA ? 1 : -1;
+      }
+      // 2. Sort by search relevance score
       if (b.score !== a.score) {
         return b.score - a.score;
       }
-      // If scores are equal, sort by creation date descending (newest first)
+      // 3. Sort by creation date descending (newest first)
       const timeA = a.task?.createdAt ? new Date(a.task.createdAt).getTime() : 0;
       const timeB = b.task?.createdAt ? new Date(b.task.createdAt).getTime() : 0;
       return timeB - timeA;
@@ -1552,6 +1711,23 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
     }
   }
 
+  // Format creation date beautifully
+  const formatDate = (dateStr?: string) => {
+    if (!dateStr) return "";
+    try {
+      const d = new Date(dateStr);
+      if (isNaN(d.getTime())) return dateStr;
+      const day = String(d.getDate()).padStart(2, "0");
+      const month = String(d.getMonth() + 1).padStart(2, "0");
+      const year = d.getFullYear();
+      const hours = String(d.getHours()).padStart(2, "0");
+      const minutes = String(d.getMinutes()).padStart(2, "0");
+      return `📅 ${day}/${month}/${year} ${hours}:${minutes}`;
+    } catch {
+      return dateStr;
+    }
+  };
+
   // Helper for priority colors (using Sintiens' specific presets)
   function getPriorityColor(p: "low" | "normal" | "medium" | "high") {
     if (p === "high") return "bg-rose-500/10 text-rose-600 dark:text-rose-400 border-rose-500/25";
@@ -1562,213 +1738,510 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
 
   const renderTaskDetailContent = (task: DevTask) => {
     return (
-      <>
-        {!isEditingTask ? (
-          /* READ VIEW */
-          <div className="space-y-3.5 text-xs font-sans">
-            <div className="flex items-center justify-between flex-wrap gap-2">
-              <h3 className="text-sm font-bold text-zinc-900 dark:text-white leading-snug">{task.title}</h3>
-              <div className="flex items-center gap-1.5">
-                <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border uppercase font-mono ${getPriorityColor(task.priority)}`}>
-                  {task.priority}
-                </span>
-                <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border uppercase font-mono ${
-                  task.status === "done"
-                    ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-555/20"
-                    : task.status === "in-progress"
-                      ? "bg-amber-500/10 text-amber-600 dark:text-amber-400 border-amber-555/20"
-                      : "bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border-indigo-555/20"
-                }`}>
-                  {task.status}
-                </span>
-              </div>
-            </div>
+      <form 
+        onSubmit={handleUpdateTaskDetails} 
+        onKeyDown={(e) => {
+          if (e.key === "Enter") {
+            if (e.target instanceof HTMLTextAreaElement) {
+              if (e.ctrlKey || e.metaKey) {
+                e.preventDefault();
+                e.currentTarget.requestSubmit();
+              }
+            } else {
+              e.preventDefault();
+              e.currentTarget.requestSubmit();
+            }
+          }
+        }}
+        className="space-y-3.5 text-xs font-sans text-left"
+      >
+        {/* Edit Title */}
+        <div className="space-y-1">
+          <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">
+            Título
+          </label>
+          <input
+            type="text"
+            required
+            value={editTitle}
+            onChange={(e) => setEditTitle(e.target.value)}
+            className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 dark:focus:border-purple-600 focus:ring-1 focus:ring-purple-200 dark:focus:ring-purple-900 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all"
+          />
+        </div>
 
-            {task.description ? (
-              <p className="text-xs text-zinc-650 dark:text-zinc-350 font-light leading-relaxed whitespace-pre-wrap bg-zinc-50/50 dark:bg-zinc-900/40 p-3 rounded-xl border border-zinc-200/50 dark:border-zinc-800/40 max-h-[150px] overflow-y-auto overscroll-y-contain custom-scrollbar">
-                {task.description}
-              </p>
-            ) : (
-              <p className="text-[10px] text-zinc-400 dark:text-zinc-600 italic">Sin descripción adicional</p>
-            )}
-
-            {/* AI Feedback Display (if the task has user feedback pending) */}
-            {task.aiFeedback && (
-              <div className="bg-purple-950/20 dark:bg-purple-950/30 border border-purple-500/20 rounded-xl p-3 space-y-1">
-                <span className="text-[9px] font-mono font-bold text-purple-400 uppercase tracking-wider">💬 Tu feedback anterior:</span>
-                <p className="text-[11px] text-purple-200 dark:text-purple-300 font-light leading-relaxed italic">"{task.aiFeedback}"</p>
-              </div>
-            )}
-
-            {/* AI Preview Action Bar — shown for AI-tagged tasks */}
-            {task.title.startsWith("[IA: Listo para verificar") ? (
-              <div className="space-y-2.5 pt-3 border-t border-purple-500/15">
-                <div className="flex items-center gap-2">
-                  <div className="relative flex h-2 w-2">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
-                  </div>
-                  <span className="text-[9px] font-mono font-black text-purple-500 dark:text-purple-400 uppercase tracking-widest">Sugerencia de la IA lista</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handlePreviewTask(task.id);
-                  }}
-                  disabled={isSubmittingPreviewAction}
-                  className="w-full bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold px-4 py-3 rounded-2xl text-xs transition-all cursor-pointer flex items-center justify-center gap-2 active:scale-[0.98] shadow-[0_4px_15px_rgba(139,92,246,0.3)] border border-purple-500/20"
-                >
-                  <Sparkles className="w-4 h-4" /> Probar en Vivo
-                </button>
-                <div className="flex items-center gap-2">
+        {/* Dropdowns row: Priority, Status, Sección (Etiqueta) - styled exactly like the search filters, placed below title */}
+        <div className="flex flex-row gap-1.5 min-h-[44px] h-auto transition-all duration-300 pt-1">
+          
+          {/* Edit Status (Estado) Column */}
+          <div 
+            onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredEditFilter("estado"); }}
+            onMouseLeave={() => setHoveredEditFilter(null)}
+            className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+              hoveredEditFilter === "estado" 
+                ? "md:flex-[3.2] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                : hoveredEditFilter 
+                  ? "md:flex-[0.4] md:opacity-50" 
+                  : "flex-1"
+            }`}
+          >
+            <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+              {hoveredEditFilter !== null && hoveredEditFilter !== "estado" ? "Est" : "Estado"}
+            </label>
+            <div className="flex items-center justify-center w-full min-h-[22px]">
+              {hoveredEditFilter === "estado" ? (
+                <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5">
+                  {/* Pendiente */}
                   <button
                     type="button"
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleRejectTask(task.id);
+                      setEditStatus("todo");
                     }}
-                    disabled={isSubmittingPreviewAction}
-                    className="flex-1 bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-50 text-zinc-600 dark:text-zinc-400 font-bold px-3 py-2 rounded-xl text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1 border border-zinc-200 dark:border-zinc-800"
-                  >
-                    <X className="w-3 h-3" /> Rechazar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDeleteTask(task.id);
-                    }}
-                    className="text-rose-550 hover:text-rose-600 font-bold cursor-pointer flex items-center gap-1 text-[10px] px-2 py-2"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-            ) : (
-              /* Normal Task Action Bar */
-              <div className="flex items-center justify-between pt-3 border-t border-zinc-100 dark:border-zinc-900">
-                <button
-                  type="button"
-                  onClick={() => handleDeleteTask(task.id)}
-                  className="text-rose-550 hover:text-rose-600 font-bold cursor-pointer flex items-center gap-1 text-[10px]"
-                >
-                  <Trash2 className="w-3.5 h-3.5" /> Eliminar
-                </button>
-
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => startEditing(task)}
-                    className="bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer border border-zinc-200 dark:border-zinc-800"
-                  >
-                    <Edit2 className="w-3 h-3 inline mr-1" /> Editar
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleComplete(task)}
-                    className={`px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
-                      task.status === "done"
-                        ? "bg-zinc-150 text-zinc-500 dark:bg-zinc-900 dark:text-zinc-400 border border-zinc-250 dark:border-zinc-800"
-                        : "bg-emerald-600 hover:bg-emerald-700 text-white shadow-sm"
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editStatus === "todo"
+                        ? "bg-indigo-500/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 shadow-sm ring-1 ring-indigo-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-indigo-500/10 dark:hover:bg-indigo-950/20"
                     }`}
                   >
-                    {task.status === "done" ? (
-                      "Reabrir"
-                    ) : (
-                      <>
-                        <Check className="w-3.5 h-3.5 stroke-[3.5]" /> Completar
-                      </>
-                    )}
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                    <span>Pendiente</span>
+                  </button>
+
+                  {/* En Proceso */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditStatus("in-progress");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editStatus === "in-progress"
+                        ? "bg-amber-500/10 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-900 shadow-sm ring-1 ring-amber-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-amber-500/10 dark:hover:bg-amber-950/20"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>Proceso</span>
+                  </button>
+
+                  {/* Completado */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditStatus("done");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editStatus === "done"
+                        ? "bg-emerald-500/10 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900 shadow-sm ring-1 ring-emerald-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-emerald-500/10 dark:hover:bg-emerald-950/20"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0" />
+                    <span>Hecho</span>
                   </button>
                 </div>
-              </div>
-            )}
+              ) : hoveredEditFilter === null ? (
+                /* Collapsed Show active selection text and dot */
+                <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                  <span className="truncate max-w-[65px] leading-none">
+                    {editStatus === "todo" && "Pendiente"}
+                    {editStatus === "in-progress" && "Proceso"}
+                    {editStatus === "done" && "Hecho"}
+                  </span>
+                  {editStatus === "todo" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                  {editStatus === "in-progress" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                  {editStatus === "done" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                </div>
+              ) : (
+                /* Squeezed state (another is hovered) - show only dot */
+                <div className="flex items-center justify-center shrink-0">
+                  {editStatus === "todo" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                  {editStatus === "in-progress" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                  {editStatus === "done" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        ) : (
-          /* EDIT FORM */
-          <form onSubmit={handleUpdateTaskDetails} className="space-y-3.5 text-xs">
-            {/* Edit Title */}
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
-                Título
-              </label>
-              <input
-                type="text"
-                required
-                value={editTitle}
-                onChange={(e) => setEditTitle(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-zinc-500 dark:focus:border-zinc-700 focus:ring-1 focus:ring-zinc-200 dark:focus:ring-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all"
-              />
-            </div>
 
-            {/* Edit Description */}
-            <div className="space-y-1">
-              <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
-                Descripción
-              </label>
-              <textarea
-                value={editDesc}
-                onChange={(e) => setEditDesc(e.target.value)}
-                rows={2}
-                className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-zinc-500 dark:focus:border-zinc-700 focus:ring-1 focus:ring-zinc-200 dark:focus:ring-zinc-800 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all overscroll-y-contain resize-none leading-relaxed"
-              />
-            </div>
+          {/* Edit Priority (Prioridad) Column */}
+          <div 
+            onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredEditFilter("priority"); }}
+            onMouseLeave={() => setHoveredEditFilter(null)}
+            className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+              hoveredEditFilter === "priority" 
+                ? "md:flex-[3.2] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                : hoveredEditFilter 
+                  ? "md:flex-[0.4] md:opacity-50" 
+                  : "flex-1"
+            }`}
+          >
+            <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+              {hoveredEditFilter !== null && hoveredEditFilter !== "priority" ? "Prio" : "Prioridad"}
+            </label>
+            <div className="flex items-center justify-center w-full min-h-[22px]">
+              {hoveredEditFilter === "priority" ? (
+                <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5">
+                  {/* Baja */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditPriority("low");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editPriority === "low"
+                        ? "bg-indigo-500/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 shadow-sm ring-1 ring-indigo-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-indigo-500/10 dark:hover:bg-indigo-950/20"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                    <span>Baja</span>
+                  </button>
 
-            <div className="grid grid-cols-2 gap-3">
-              {/* Edit Priority */}
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
-                  Prioridad
-                </label>
-                <select
-                  value={editPriority}
-                  onChange={(e) => setEditPriority(e.target.value as any)}
-                  className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-2 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none"
-                >
-                  <option value="low">Baja</option>
-                  <option value="normal">Normal</option>
-                  <option value="medium">Media</option>
-                  <option value="high">Alta</option>
-                </select>
+                  {/* Normal */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditPriority("normal");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editPriority === "normal"
+                        ? "bg-zinc-500/10 dark:bg-zinc-805 text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 shadow-sm ring-1 ring-zinc-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-zinc-500/10 dark:hover:bg-zinc-800"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-zinc-550 shrink-0" />
+                    <span>Normal</span>
+                  </button>
+
+                  {/* Media */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditPriority("medium");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editPriority === "medium"
+                        ? "bg-amber-500/10 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-900 shadow-sm ring-1 ring-amber-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-amber-500/10 dark:hover:bg-amber-950/20"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                    <span>Media</span>
+                  </button>
+
+                  {/* Alta */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditPriority("high");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editPriority === "high"
+                        ? "bg-rose-500/10 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-900 shadow-sm ring-1 ring-rose-500/20"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-rose-500/10 dark:hover:bg-rose-950/20"
+                    }`}
+                  >
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                    <span>Alta</span>
+                  </button>
+                </div>
+              ) : hoveredEditFilter === null ? (
+                /* Collapsed Show active selection text and dot */
+                <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                  <span className="truncate max-w-[65px] leading-none">
+                    {editPriority === "low" && "Baja"}
+                    {editPriority === "normal" && "Normal"}
+                    {editPriority === "medium" && "Media"}
+                    {editPriority === "high" && "Alta"}
+                  </span>
+                  {editPriority === "low" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm shrink-0" />
+                  )}
+                  {editPriority === "normal" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-zinc-550 border border-zinc-400 shadow-sm shrink-0" />
+                  )}
+                  {editPriority === "medium" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm shrink-0" />
+                  )}
+                  {editPriority === "high" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 border border-rose-400 shadow-sm shrink-0" />
+                  )}
+                </div>
+              ) : (
+                /* Squeezed Show active priority dot */
+                <div className="flex items-center justify-center shrink-0">
+                  {editPriority === "low" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm animate-fadeIn" />
+                  )}
+                  {editPriority === "normal" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-zinc-550 border border-zinc-400 shadow-sm animate-fadeIn" />
+                  )}
+                  {editPriority === "medium" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm animate-fadeIn" />
+                  )}
+                  {editPriority === "high" && (
+                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 border border-rose-400 shadow-sm animate-fadeIn" />
+                  )}
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Edit Section (Sección) Column */}
+          <div 
+            onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredEditFilter("tab"); }}
+            onMouseLeave={() => setHoveredEditFilter(null)}
+            className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+              hoveredEditFilter === "tab" 
+                ? "md:flex-[4.2] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                : hoveredEditFilter 
+                  ? "md:flex-[0.4] md:opacity-50" 
+                  : "flex-1"
+            }`}
+          >
+            <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+              {hoveredEditFilter !== null && hoveredEditFilter !== "tab" ? "Secc" : "Sección"}
+            </label>
+            <div className="flex items-center justify-center w-full min-h-[22px]">
+              {hoveredEditFilter === "tab" ? (
+                <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5 animate-[fadeIn_0.2s_ease-out]">
+                  {/* Conceptos */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("grafo");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "grafo"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">🧠</span>
+                    <span>Conceptos</span>
+                  </button>
+
+                  {/* Cronología */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("cronologia");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "cronologia"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">⏳</span>
+                    <span>Crono</span>
+                  </button>
+
+                  {/* Dialéctica */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("dialectica");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "dialectica"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">⚖️</span>
+                    <span>Tesis</span>
+                  </button>
+
+                  {/* Calculadora */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("calculadora");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "calculadora"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">📊</span>
+                    <span>Impacto</span>
+                  </button>
+
+                  {/* Validador */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("validador");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "validador"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">🤖</span>
+                    <span>Sintiens IA</span>
+                  </button>
+
+                  {/* General */}
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditTab("general");
+                    }}
+                    className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                      editTab === "general"
+                        ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                        : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                    }`}
+                  >
+                    <span className="text-[9px]">📌</span>
+                    <span>General</span>
+                  </button>
+                </div>
+              ) : hoveredEditFilter === null ? (
+                /* Collapsed Show active selection text and emoji */
+                <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                  <span className="truncate max-w-[65px] leading-none">
+                    {editTab === "grafo" && "Conceptos"}
+                    {editTab === "cronologia" && "Cronología"}
+                    {editTab === "dialectica" && "Tesis"}
+                    {editTab === "calculadora" && "Impacto"}
+                    {editTab === "validador" && "Sintiens IA"}
+                    {editTab === "general" && "General"}
+                  </span>
+                  <span className="text-[10px] shrink-0 leading-none">
+                    {editTab === "grafo" && "🧠"}
+                    {editTab === "cronologia" && "⏳"}
+                    {editTab === "dialectica" && "⚖️"}
+                    {editTab === "calculadora" && "📊"}
+                    {editTab === "validador" && "🤖"}
+                    {editTab === "general" && "📌"}
+                  </span>
+                </div>
+              ) : (
+                /* Squeezed Show active tab emoji */
+                <div className="flex items-center justify-center shrink-0">
+                  <span className="text-[10px] shrink-0 leading-none">
+                    {editTab === "grafo" && "🧠"}
+                    {editTab === "cronologia" && "⏳"}
+                    {editTab === "dialectica" && "⚖️"}
+                    {editTab === "calculadora" && "📊"}
+                    {editTab === "validador" && "🤖"}
+                    {editTab === "general" && "📌"}
+                  </span>
+                </div>
+              )}
+            </div>
+          </div>
+
+        </div>
+
+        {/* Edit Description */}
+        <div className="space-y-1">
+          <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider block">
+            Descripción
+          </label>
+          <textarea
+            value={editDesc}
+            onChange={(e) => setEditDesc(e.target.value)}
+            rows={Math.max(3, (editDesc || "").split("\n").length + Math.floor((editDesc || "").length / 45))}
+            className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 dark:focus:border-purple-600 focus:ring-1 focus:ring-purple-200 dark:focus:ring-purple-900 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all resize-none leading-relaxed overflow-hidden"
+          />
+        </div>
+
+        {/* AI Preview Action Bar — shown for AI-tagged tasks inside the edit form */}
+        {task.title.startsWith("[IA: Listo para verificar") && (
+          <div className="space-y-2 pt-2 border-t border-purple-500/15">
+            <div className="flex items-center gap-2">
+              <div className="relative flex h-2 w-2">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-purple-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-2 w-2 bg-purple-500"></span>
               </div>
-
-              {/* Edit Status */}
-              <div className="space-y-1">
-                <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
-                  Estado
-                </label>
-                <select
-                  value={editStatus}
-                  onChange={(e) => setEditStatus(e.target.value as any)}
-                  className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-2 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none"
-                >
-                  <option value="todo">Pendiente</option>
-                  <option value="in-progress">En Proceso</option>
-                  <option value="done">Completado</option>
-                </select>
-              </div>
+              <span className="text-[9px] font-mono font-black text-purple-500 dark:text-purple-400 uppercase tracking-widest leading-none">Sugerencia de la IA lista</span>
             </div>
-
-            {/* Edit Actions */}
-            <div className="flex justify-end gap-2 pt-3 border-t border-zinc-200 dark:border-zinc-900">
+            <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => setIsEditingTask(false)}
-                className="bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-350 px-3.5 py-2 rounded-xl text-xs font-bold transition-all cursor-pointer border border-zinc-200 dark:border-zinc-800"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handlePreviewTask(task.id);
+                }}
+                disabled={isSubmittingPreviewAction}
+                className="flex-1 bg-gradient-to-r from-purple-600 to-indigo-600 hover:from-purple-700 hover:to-indigo-700 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-xl text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98] border border-purple-500/15"
               >
-                Cancelar
+                <Sparkles className="w-3.5 h-3.5 animate-pulse" /> Probar en Vivo
               </button>
               <button
-                type="submit"
-                className="bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer"
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleRejectTask(task.id);
+                }}
+                disabled={isSubmittingPreviewAction}
+                className="bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 disabled:opacity-50 text-zinc-600 dark:text-zinc-400 font-bold px-3 py-2 rounded-xl text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1 border border-zinc-200 dark:border-zinc-800"
               >
-                Guardar
+                <X className="w-3 h-3" /> Rechazar
               </button>
             </div>
-          </form>
+          </div>
         )}
-      </>
+
+        {/* Edit Actions: Delete on the left, Close & Save on the right */}
+        <div className="flex items-center justify-between pt-3 border-t border-zinc-200 dark:border-zinc-900">
+          <button
+            type="button"
+            onClick={() => handleDeleteTask(task.id)}
+            className="text-rose-500 hover:text-rose-600 dark:text-rose-400 dark:hover:text-rose-300 font-bold cursor-pointer flex items-center gap-1 text-[10px] py-1.5 px-2.5 rounded-xl hover:bg-rose-500/5 transition-all"
+          >
+            <Trash2 className="w-3.5 h-3.5" /> Eliminar
+          </button>
+
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                setSelectedTask(null);
+                setIsEditingTask(false);
+              }}
+              className="bg-zinc-100 hover:bg-zinc-200 dark:bg-zinc-900 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-355 px-3.5 py-1.5 rounded-xl text-[10px] font-bold transition-all cursor-pointer border border-zinc-200 dark:border-zinc-800"
+            >
+              Cancelar
+            </button>
+            <button
+              type="submit"
+              className="bg-zinc-900 hover:bg-zinc-800 dark:bg-zinc-100 dark:hover:bg-zinc-200 text-white dark:text-zinc-950 font-bold px-4 py-1.5 rounded-xl text-[10px] transition-all cursor-pointer shadow-sm"
+            >
+              Guardar
+            </button>
+          </div>
+        </div>
+      </form>
     );
   };
 
@@ -1839,45 +2312,40 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
   const renderPanelBody = () => {
     return (
       <>
-
-
-        {/* Metrics Quick Strip */}
-        <div className="px-5 py-2.5 bg-zinc-50/20 dark:bg-zinc-900/20 border-b border-zinc-200/60 dark:border-zinc-900 grid grid-cols-3 gap-2.5 text-center text-[10px] font-mono shrink-0">
-          <div className="px-2 py-1 bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-900 rounded-xl flex items-center justify-center gap-1 shadow-sm dark:shadow-none">
-            <span className="text-zinc-400 dark:text-zinc-500">PEND:</span>
-            <span className="font-bold text-indigo-600 dark:text-indigo-400">{todoCount}</span>
-          </div>
-          <div className="px-2 py-1 bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-900 rounded-xl flex items-center justify-center gap-1 shadow-sm dark:shadow-none">
-            <span className="text-zinc-400 dark:text-zinc-500">WIP:</span>
-            <span className="font-bold text-amber-600 dark:text-amber-500">{inProgressCount}</span>
-          </div>
-          <div className="px-2 py-1 bg-white dark:bg-zinc-950 border border-zinc-200/80 dark:border-zinc-900 rounded-xl flex items-center justify-center gap-1 shadow-sm dark:shadow-none">
-            <span className="text-zinc-400 dark:text-zinc-500">LISTO:</span>
-            <span className="font-bold text-emerald-600 dark:text-emerald-500">{doneCount}</span>
-          </div>
-        </div>
-
         {/* Filter controls */}
-        <div className="p-4 border-b border-zinc-200/60 dark:border-zinc-900 bg-zinc-50/30 dark:bg-zinc-900/10 space-y-3 shrink-0">
-          {/* Search input */}
-          <div className="space-y-2">
-            <div className="relative">
+        <div className="py-2.5 px-4 border-b border-zinc-200/60 dark:border-zinc-900 bg-zinc-50/30 dark:bg-zinc-900/10 space-y-2 shrink-0">
+          {/* Search input and dynamic left-aligned Reset button */}
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
               <input
                 type="text"
                 placeholder="Buscar notas o tareas..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 dark:focus:border-purple-555 focus:ring-1 focus:ring-purple-200 dark:focus:ring-purple-900 rounded-xl pl-3 pr-8 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-400 dark:placeholder-zinc-650"
+                className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 dark:focus:border-purple-600 focus:ring-1 focus:ring-purple-200 dark:focus:ring-purple-900 rounded-xl pl-3 pr-8 py-1.5 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-[11px] placeholder:text-zinc-400 dark:placeholder-zinc-650"
               />
-              <Sparkles className={`w-3.5 h-3.5 absolute right-2.5 top-2.5 pointer-events-none transition-colors duration-300 ${(searchQuery || "").trim() !== "" ? "text-purple-500" : "text-zinc-400 dark:text-zinc-600"}`} />
+              <Sparkles className={`w-3.5 h-3.5 absolute right-2.5 top-2 pointer-events-none transition-colors duration-300 ${(searchQuery || "").trim() !== "" ? "text-purple-500" : "text-zinc-400 dark:text-zinc-600"}`} />
             </div>
+            {(filterStatus !== "all" || filterPriority !== "all" || filterTab !== "all" || (searchQuery || "").trim() !== "") && (
+              <button
+                type="button"
+                onClick={() => {
+                  setFilterStatus("all");
+                  setFilterPriority("all");
+                  setFilterTab("all");
+                  setSearchQuery("");
+                }}
+                className="shrink-0 text-[9px] font-sans font-extrabold text-purple-600 dark:text-purple-400 hover:text-purple-750 dark:hover:text-purple-300 flex items-center gap-1 transition-all cursor-pointer bg-purple-500/10 hover:bg-purple-500/15 px-2.5 py-1.5 rounded-xl border border-purple-500/10 shadow-sm animate-fadeIn leading-none h-[28px]"
+              >
+                <X className="w-2.5 h-2.5 stroke-[3]" /> Restablecer
+              </button>
+            )}
+          </div>
+          <div className="space-y-1.5">
 
             {/* Micro-badges for interpreted semantic filters */}
             {(searchQuery || "").trim() !== "" && (semantic.priority || semantic.status || semantic.tab) && (
               <div className="flex flex-wrap gap-1.5 pt-0.5 animate-fadeIn">
-                <span className="text-[9px] font-mono text-zinc-450 dark:text-zinc-550 font-bold self-center mr-0.5">
-                  Filtros inteligentes:
-                </span>
                 {semantic.priority && (
                   <span className="px-2 py-0.5 rounded-lg text-[8px] font-mono font-black flex items-center gap-1 border border-rose-500/20 bg-rose-500/10 text-rose-600 dark:text-rose-400 shadow-sm">
                     <Sparkles className="w-2.5 h-2.5 text-rose-500 animate-pulse shrink-0" />
@@ -1885,7 +2353,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                   </span>
                 )}
                 {semantic.status && (
-                  <span className="px-2 py-0.5 rounded-lg text-[8px] font-mono font-black flex items-center gap-1 border border-indigo-500/20 bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 shadow-sm">
+                  <span className="px-2 py-0.5 rounded-lg text-[8px] font-mono font-black flex items-center gap-1 border border-indigo-500/20 bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 shadow-sm">
                     <Sparkles className="w-2.5 h-2.5 text-indigo-500 animate-pulse shrink-0" />
                     ESTADO: {semantic.status === "todo" ? "PENDIENTE" : semantic.status === "in-progress" ? "WIP" : "COMPLETADO"}
                   </span>
@@ -1898,62 +2366,440 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                 )}
               </div>
             )}
-          </div>
 
-          <div className="grid grid-cols-3 gap-2">
-            {/* Status select */}
-            <div className="space-y-0.5">
-              <label className="text-[8px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-widest block font-bold">Estado</label>
-              <select
-                value={filterStatus}
-                onChange={(e) => setFilterStatus(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 text-[10px] rounded-lg px-2 py-1.5 text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500"
+            {/* Row of Filters: Estado, Prioridad, Sección */}
+            <div className="flex flex-row gap-1.5 min-h-[44px] h-auto transition-all duration-300">
+              
+              {/* Estado Filter Column */}
+              <div 
+                onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredFilter("estado"); }}
+                onMouseLeave={() => setHoveredFilter(null)}
+                className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+                  hoveredFilter === "estado" 
+                    ? "md:flex-[3.2] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                    : hoveredFilter 
+                      ? "md:flex-[0.4] md:opacity-50" 
+                      : "flex-1"
+                }`}
               >
-                <option value="all">Todos</option>
-                <option value="todo">Pendiente</option>
-                <option value="in-progress">En Proceso</option>
-                <option value="done">Completado</option>
-              </select>
-            </div>
+                <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+                  {hoveredFilter !== null && hoveredFilter !== "estado" ? "Est" : "Estado"}
+                </label>
+                <div className="flex items-center justify-center w-full min-h-[22px]">
+                  {hoveredFilter === "estado" ? (
+                    <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5">
+                      {/* All */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterStatus("all")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterStatus === "all"
+                            ? "bg-zinc-100 dark:bg-zinc-800 text-zinc-800 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 shadow-sm ring-1 ring-zinc-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-zinc-100 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500 shrink-0" />
+                        <span>Todos</span>
+                      </button>
 
-            {/* Priority select */}
-            <div className="space-y-0.5">
-              <label className="text-[8px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-widest block font-bold">Prioridad</label>
-              <select
-                value={filterPriority}
-                onChange={(e) => setFilterPriority(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 text-[10px] rounded-lg px-2 py-1.5 text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500"
-              >
-                <option value="all">Todas</option>
-                <option value="high">Alta</option>
-                <option value="medium">Media</option>
-                <option value="normal">Normal</option>
-                <option value="low">Baja</option>
-              </select>
-            </div>
+                      {/* Pendiente */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterStatus(filterStatus === "todo" ? "all" : "todo")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterStatus === "todo"
+                            ? "bg-indigo-500/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 shadow-sm ring-1 ring-indigo-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-indigo-500/10 dark:hover:bg-indigo-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0 relative">
+                          {todoCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 flex h-1 w-1">
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-indigo-300"></span>
+                            </span>
+                          )}
+                        </span>
+                        <span>Pendiente</span>
+                      </button>
 
-            {/* Tab selector */}
-            <div className="space-y-0.5">
-              <label className="text-[8px] font-mono text-zinc-400 dark:text-zinc-500 uppercase tracking-widest block font-bold">Sección</label>
-              <select
-                value={filterTab}
-                onChange={(e) => setFilterTab(e.target.value)}
-                className="w-full bg-white dark:bg-zinc-950 border border-zinc-300 dark:border-zinc-800 text-[10px] rounded-lg px-2 py-1.5 text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500"
+                      {/* En Proceso */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterStatus(filterStatus === "in-progress" ? "all" : "in-progress")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterStatus === "in-progress"
+                            ? "bg-amber-500/10 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-900 shadow-sm ring-1 ring-amber-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-amber-500/10 dark:hover:bg-amber-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0 relative">
+                          {inProgressCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 flex h-1 w-1">
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-amber-305 dark:bg-amber-300"></span>
+                            </span>
+                          )}
+                        </span>
+                        <span>Proceso</span>
+                      </button>
+
+                      {/* Hecho */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterStatus(filterStatus === "done" ? "all" : "done")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterStatus === "done"
+                            ? "bg-emerald-500/10 dark:bg-emerald-950/40 text-emerald-600 dark:text-emerald-300 border-emerald-200 dark:border-emerald-900 shadow-sm ring-1 ring-emerald-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-emerald-500/10 dark:hover:bg-emerald-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 relative">
+                          {doneCount > 0 && (
+                            <span className="absolute -top-0.5 -right-0.5 flex h-1 w-1">
+                              <span className="relative inline-flex rounded-full h-1 w-1 bg-emerald-300"></span>
+                            </span>
+                          )}
+                        </span>
+                        <span>Hecho</span>
+                      </button>
+                    </div>
+                  ) : hoveredFilter === null ? (
+                    /* Collapsed Show active selection text and dot */
+                    <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                      <span className="truncate max-w-[65px] leading-none">
+                        {filterStatus === "all" && "Todos"}
+                        {filterStatus === "todo" && "Pendiente"}
+                        {filterStatus === "in-progress" && "Proceso"}
+                        {filterStatus === "done" && "Hecho"}
+                      </span>
+                      {filterStatus === "all" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-400 dark:bg-zinc-500 border border-zinc-300 dark:border-zinc-700 shadow-sm shrink-0" />
+                      )}
+                      {filterStatus === "todo" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                      {filterStatus === "in-progress" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                      {filterStatus === "done" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                    </div>
+                  ) : (
+                    /* Squeezed state (another is hovered) - show only dot */
+                    <div className="flex items-center justify-center shrink-0">
+                      {filterStatus === "all" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-400 dark:bg-zinc-500 border border-zinc-300 dark:border-zinc-700 shadow-sm animate-fadeIn" />
+                      )}
+                      {filterStatus === "todo" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                      {filterStatus === "in-progress" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                      {filterStatus === "done" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 border border-emerald-400 shadow-sm relative shrink-0 animate-fadeIn" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Priority Filter Column (Prioridad) */}
+              <div 
+                onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredFilter("priority"); }}
+                onMouseLeave={() => setHoveredFilter(null)}
+                className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+                  hoveredFilter === "priority" 
+                    ? "md:flex-[2.8] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                    : hoveredFilter 
+                      ? "md:flex-[0.4] md:opacity-50" 
+                      : "flex-1"
+                }`}
               >
-                <option value="all">Todas</option>
-                <option value="grafo">Conceptos</option>
-                <option value="cronologia">Cronología</option>
-                <option value="dialectica">Tesis</option>
-                <option value="calculadora">Calculadora</option>
-                <option value="validador">Sintiens IA</option>
-                <option value="general">General</option>
-              </select>
+                <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+                  {hoveredFilter !== null && hoveredFilter !== "priority" ? "Prio" : "Prioridad"}
+                </label>
+                <div className="flex items-center justify-center w-full min-h-[22px]">
+                  {hoveredFilter === "priority" ? (
+                    <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5">
+                      {/* All */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterPriority("all")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterPriority === "all"
+                            ? "bg-zinc-150/60 dark:bg-zinc-800 text-zinc-850 dark:text-zinc-200 border-zinc-350 dark:border-zinc-700 shadow-sm ring-1 ring-purple-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-zinc-150/60 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-400 dark:bg-zinc-500 shrink-0" />
+                        <span>Todas</span>
+                      </button>
+                      
+                      {/* Baja */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterPriority(filterPriority === "low" ? "all" : "low")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterPriority === "low"
+                            ? "bg-indigo-500/10 dark:bg-indigo-950/40 text-indigo-600 dark:text-indigo-300 border-indigo-200 dark:border-indigo-900 shadow-sm ring-1 ring-indigo-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-indigo-500/10 dark:hover:bg-indigo-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-indigo-500 shrink-0" />
+                        <span>Baja</span>
+                      </button>
+
+                      {/* Normal */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterPriority(filterPriority === "normal" ? "all" : "normal")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterPriority === "normal"
+                            ? "bg-zinc-500/10 dark:bg-zinc-805 text-zinc-700 dark:text-zinc-200 border-zinc-300 dark:border-zinc-700 shadow-sm ring-1 ring-zinc-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-zinc-500/10 dark:hover:bg-zinc-800"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-zinc-500 shrink-0" />
+                        <span>Normal</span>
+                      </button>
+
+                      {/* Media */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterPriority(filterPriority === "medium" ? "all" : "medium")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterPriority === "medium"
+                            ? "bg-amber-500/10 dark:bg-amber-950/40 text-amber-600 dark:text-amber-300 border-amber-200 dark:border-amber-900 shadow-sm ring-1 ring-amber-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-amber-500/10 dark:hover:bg-amber-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-amber-500 shrink-0" />
+                        <span>Media</span>
+                      </button>
+
+                      {/* Alta */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterPriority(filterPriority === "high" ? "all" : "high")}
+                        className={`py-0.5 px-1.5 rounded-full border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterPriority === "high"
+                            ? "bg-rose-500/10 dark:bg-rose-950/40 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-900 shadow-sm ring-1 ring-rose-500/20"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-rose-500/10 dark:hover:bg-rose-950/20"
+                        }`}
+                      >
+                        <span className="w-1.5 h-1.5 rounded-full bg-rose-500 shrink-0" />
+                        <span>Alta</span>
+                      </button>
+                    </div>
+                  ) : hoveredFilter === null ? (
+                    /* Collapsed Show active selection text and dot */
+                    <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                      <span className="truncate max-w-[65px] leading-none">
+                        {filterPriority === "all" && "Todas"}
+                        {filterPriority === "low" && "Baja"}
+                        {filterPriority === "normal" && "Normal"}
+                        {filterPriority === "medium" && "Media"}
+                        {filterPriority === "high" && "Alta"}
+                      </span>
+                      {filterPriority === "all" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-400 dark:bg-zinc-500 border border-zinc-300 dark:border-zinc-700 shadow-sm shrink-0" />
+                      )}
+                      {filterPriority === "low" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm shrink-0" />
+                      )}
+                      {filterPriority === "normal" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-500 border border-zinc-400 shadow-sm shrink-0" />
+                      )}
+                      {filterPriority === "medium" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm shrink-0" />
+                      )}
+                      {filterPriority === "high" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 border border-rose-400 shadow-sm shrink-0" />
+                      )}
+                    </div>
+                  ) : (
+                    /* Squeezed Show active priority dot */
+                    <div className="flex items-center justify-center shrink-0">
+                      {filterPriority === "all" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-400 dark:bg-zinc-500 border border-zinc-300 dark:border-zinc-400 shadow-sm animate-fadeIn" />
+                      )}
+                      {filterPriority === "low" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 border border-indigo-400 shadow-sm animate-fadeIn" />
+                      )}
+                      {filterPriority === "normal" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-zinc-500 border border-zinc-400 shadow-sm animate-fadeIn" />
+                      )}
+                      {filterPriority === "medium" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-amber-500 border border-amber-400 shadow-sm animate-fadeIn" />
+                      )}
+                      {filterPriority === "high" && (
+                        <span className="w-2.5 h-2.5 rounded-full bg-rose-500 border border-rose-400 shadow-sm animate-fadeIn" />
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Section Filter Column (Sección) */}
+              <div 
+                onMouseEnter={() => { if (window.innerWidth >= 768) setHoveredFilter("tab"); }}
+                onMouseLeave={() => setHoveredFilter(null)}
+                className={`transition-all duration-300 ease-out p-1 rounded-xl border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-950/40 flex flex-col justify-center min-h-[40px] h-auto overflow-hidden cursor-pointer ${
+                  hoveredFilter === "tab" 
+                    ? "md:flex-[4.2] bg-zinc-50 dark:bg-zinc-900/50 border-purple-500/30 ring-1 ring-purple-500/10" 
+                    : hoveredFilter 
+                      ? "md:flex-[0.4] md:opacity-50" 
+                      : "flex-1"
+                }`}
+              >
+                <label className="text-[7.5px] font-mono text-zinc-500 dark:text-zinc-400 uppercase tracking-wider block font-extrabold text-center mb-0.5 shrink-0 select-none leading-none">
+                  {hoveredFilter !== null && hoveredFilter !== "tab" ? "Secc" : "Sección"}
+                </label>
+                <div className="flex items-center justify-center w-full min-h-[22px]">
+                  {hoveredFilter === "tab" ? (
+                    <div className="flex flex-wrap gap-1 items-center justify-center animate-fadeIn shrink-0 w-full py-0.5">
+                      {/* All */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab("all")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "all"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">🗂️</span>
+                        <span>Todas</span>
+                      </button>
+
+                      {/* Conceptos */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "grafo" ? "all" : "grafo")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "grafo"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">🧠</span>
+                        <span>Conceptos</span>
+                      </button>
+
+                      {/* Cronologia */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "cronologia" ? "all" : "cronologia")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "cronologia"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">⏳</span>
+                        <span>Crono</span>
+                      </button>
+
+                      {/* Dialectica */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "dialectica" ? "all" : "dialectica")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "dialectica"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">⚖️</span>
+                        <span>Tesis</span>
+                      </button>
+
+                      {/* Calculadora */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "calculadora" ? "all" : "calculadora")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "calculadora"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">📊</span>
+                        <span>Impacto</span>
+                      </button>
+
+                      {/* Validador */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "validador" ? "all" : "validador")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "validador"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">🤖</span>
+                        <span>Sintiens IA</span>
+                      </button>
+
+                      {/* General */}
+                      <button
+                        type="button"
+                        onClick={() => setFilterTab(filterTab === "general" ? "all" : "general")}
+                        className={`py-0.5 px-1.5 rounded-lg border text-[8px] font-sans font-extrabold flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0 ${
+                          filterTab === "general"
+                            ? "bg-purple-500/10 dark:bg-purple-950/40 text-purple-750 dark:text-purple-300 border-purple-300 dark:border-purple-800 shadow-sm ring-1 ring-purple-500/20 font-black scale-[1.03]"
+                            : "bg-transparent text-zinc-500 dark:text-zinc-400 border-transparent hover:bg-purple-50 dark:hover:bg-purple-950/20"
+                        }`}
+                      >
+                        <span className="text-[9px]">📌</span>
+                        <span>General</span>
+                      </button>
+                    </div>
+                  ) : hoveredFilter === null ? (
+                    /* Collapsed Show active selection text and emoticon */
+                    <div className="flex items-center gap-1 text-[9px] font-sans font-bold text-zinc-700 dark:text-zinc-300 shrink-0 animate-fadeIn leading-none">
+                      <span className="truncate max-w-[65px] leading-none">
+                        {filterTab === "all" && "Todas"}
+                        {filterTab === "grafo" && "Conceptos"}
+                        {filterTab === "cronologia" && "Cronología"}
+                        {filterTab === "dialectica" && "Tesis"}
+                        {filterTab === "calculadora" && "Impacto"}
+                        {filterTab === "validador" && "Sintiens IA"}
+                        {filterTab === "general" && "General"}
+                      </span>
+                      <span className="text-[10px] shrink-0 leading-none">
+                        {filterTab === "all" && "🗂️"}
+                        {filterTab === "grafo" && "🧠"}
+                        {filterTab === "cronologia" && "⏳"}
+                        {filterTab === "dialectica" && "⚖️"}
+                        {filterTab === "calculadora" && "📊"}
+                        {filterTab === "validador" && "🤖"}
+                        {filterTab === "general" && "📌"}
+                      </span>
+                    </div>
+                  ) : (
+                    /* Squeezed Show active section emoticon */
+                    <div className="flex items-center justify-center text-[10px] shrink-0">
+                      {filterTab === "all" && "🗂️"}
+                      {filterTab === "grafo" && "🧠"}
+                      {filterTab === "cronologia" && "⏳"}
+                      {filterTab === "dialectica" && "⚖️"}
+                      {filterTab === "calculadora" && "📊"}
+                      {filterTab === "validador" && "🤖"}
+                      {filterTab === "general" && "📌"}
+                    </div>
+                  )}
+                </div>
+              </div>
+
             </div>
           </div>
         </div>
 
         {/* Stationary Inline Creation Block (Fixed at the top, does not scroll) */}
-        <div className="px-4 pt-4 pb-2 shrink-0 bg-zinc-50/20 dark:bg-zinc-950/15 border-b border-zinc-150/40 dark:border-zinc-900/50">
+        <div className="px-4 pt-2.5 pb-1.5 shrink-0 bg-zinc-50/20 dark:bg-zinc-950/15 border-b border-zinc-150/40 dark:border-zinc-900/50">
           <AnimatePresence mode="popLayout">
             {isCreatingInline ? (
               <motion.div
@@ -1962,9 +2808,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                 animate={{ opacity: 1, height: "auto", marginBottom: 12 }}
                 exit={{ opacity: 0, height: 0, marginBottom: 0 }}
                 transition={{ duration: 0.25, ease: "easeInOut" }}
-                className="p-4 bg-white dark:bg-zinc-900 border border-purple-500/40 dark:border-purple-500/30 rounded-2xl shadow-lg space-y-3 dev-mode-ui text-left overflow-hidden shrink-0"
+                className="p-3 bg-white dark:bg-zinc-900 border border-purple-500/40 dark:border-purple-500/30 rounded-2xl shadow-lg space-y-2 dev-mode-ui text-left overflow-hidden shrink-0"
               >
-                <div className="flex items-center justify-between pb-2 border-b border-zinc-150 dark:border-zinc-800">
+                <div className="flex items-center justify-between pb-1.5 border-b border-zinc-150 dark:border-zinc-800">
                   <span className="font-mono text-[9px] text-purple-650 dark:text-purple-400 font-bold uppercase tracking-wider flex items-center gap-1">
                     <Sparkles className="w-3 h-3 text-purple-500 shrink-0" />
                     Nueva Nota Inline
@@ -1990,6 +2836,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       selector: newPinCoords ? newPinSelector : undefined,
                       rx: newPinCoords ? newPinRelative?.rx : undefined,
                       ry: newPinCoords ? newPinRelative?.ry : undefined,
+                      rw: newPinCoords ? newPinRelative?.rw : undefined,
+                      rh: newPinCoords ? newPinRelative?.rh : undefined,
                       priority: formPriority,
                       status: "todo"
                     };
@@ -2022,10 +2870,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       alert("Error al conectar con la API de desarrollo");
                     }
                   }}
-                  className="space-y-3 font-sans text-xs"
+                  className="space-y-2 font-sans text-xs"
                 >
                   {/* Title Input */}
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
                       Título de la Nota / Pin
                     </label>
@@ -2036,21 +2884,27 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       value={formTitle}
                       onChange={(e) => setFormTitle(e.target.value)}
                       placeholder="Ej. Cambiar margen de la cabecera"
-                      className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-250 dark:focus:ring-purple-900 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-400 dark:placeholder-zinc-650"
+                      className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-250 dark:focus:ring-purple-900 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-[11px] placeholder:text-zinc-400 dark:placeholder-zinc-650"
                     />
                   </div>
 
                   {/* Description Textarea */}
-                  <div className="space-y-1">
+                  <div className="space-y-0.5">
                     <label className="text-[9px] font-mono text-zinc-400 dark:text-zinc-550 font-bold uppercase tracking-wider block">
                       Descripción / Comentario
                     </label>
                     <textarea
                       value={formDesc}
                       onChange={(e) => setFormDesc(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          e.currentTarget.form?.requestSubmit();
+                        }
+                      }}
                       rows={2}
                       placeholder="Escribe más detalles aquí..."
-                      className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-250 dark:focus:ring-purple-900 rounded-xl px-3 py-2 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-400 dark:placeholder-zinc-650 resize-none leading-relaxed"
+                      className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-purple-500 focus:ring-1 focus:ring-purple-250 dark:focus:ring-purple-900 rounded-xl px-3 py-1.5 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-[11px] placeholder:text-zinc-400 dark:placeholder-zinc-650 resize-none leading-relaxed"
                     />
                   </div>
 
@@ -2063,7 +2917,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       <select
                         value={formPriority}
                         onChange={(e) => setFormPriority(e.target.value as any)}
-                        className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none focus:border-purple-500"
+                        className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none focus:border-purple-500 dark:[&>option]:bg-zinc-950 dark:[&>option]:text-zinc-300"
                       >
                         <option value="low">Baja</option>
                         <option value="normal">Normal</option>
@@ -2081,7 +2935,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         value={newPinCoords ? formTab : formTab === "general" ? "general" : formTab}
                         disabled={!!newPinCoords}
                         onChange={(e) => setFormTab(e.target.value)}
-                        className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none focus:border-purple-500 disabled:opacity-60"
+                        className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-xl px-2 py-1.5 text-xs text-zinc-750 dark:text-zinc-300 focus:outline-none focus:border-purple-500 disabled:opacity-60 dark:[&>option]:bg-zinc-950 dark:[&>option]:text-zinc-300"
                       >
                         <option value="general">General (Sin pin)</option>
                         <option value="grafo">Conceptos</option>
@@ -2166,10 +3020,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                   setNewPinSelector(undefined);
                   setNewPinRelative(null);
                 }}
-                className="p-4 bg-purple-500/5 dark:bg-purple-950/10 hover:bg-purple-500/10 dark:hover:bg-purple-950/20 border-2 border-dashed border-purple-500/30 dark:border-purple-500/20 rounded-2xl flex items-center justify-center gap-2.5 transition-all duration-300 cursor-pointer shadow-sm hover:scale-[1.01] group shrink-0 mb-0"
+                className="py-1.5 px-3 bg-purple-500/5 dark:bg-purple-950/10 hover:bg-purple-500/10 dark:hover:bg-purple-950/20 border border-dashed border-purple-500/25 dark:border-purple-500/15 rounded-xl flex items-center justify-center gap-1.5 transition-all duration-300 cursor-pointer shadow-sm hover:scale-[1.01] group shrink-0 mb-0"
               >
-                <Plus className="w-5 h-5 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform stroke-[2.5]" />
-                <span className="text-xs font-bold text-purple-750 dark:text-purple-300 font-sans tracking-wide">
+                <Plus className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400 group-hover:scale-110 transition-transform stroke-[3]" />
+                <span className="text-[10px] font-bold text-purple-750 dark:text-purple-300 font-sans tracking-wide">
                   Crear nueva nota / pin...
                 </span>
               </motion.div>
@@ -2198,20 +3052,30 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
               return (
                 <motion.div
                   layout
+                  transition={{
+                    layout: { type: "spring", stiffness: 200, damping: 32, mass: 0.8 }
+                  }}
                   key={task.id}
+                  id={`dev-card-${task.id}`}
                   onMouseEnter={() => setHighlightedPinId(task.id)}
                   onMouseLeave={() => setHighlightedPinId(null)}
                   onClick={() => {
                     if (selectedTask?.id === task.id) {
                       setSelectedTask(null);
+                      setIsEditingTask(false);
+                      setShowMapPopover(false);
                     } else {
                       setSelectedTask(task);
-                      setIsEditingTask(false);
+                      startEditing(task);
+                      setShowMapPopover(false);
+                      handleFocusTask(task);
                     }
                   }}
-                  className={`p-4 bg-white dark:bg-zinc-900/60 border rounded-2xl flex flex-col justify-between transition-all duration-300 shadow-sm dark:shadow-none hover:border-zinc-400 dark:hover:border-zinc-700 cursor-pointer ${
+                  className={`p-3.5 bg-white dark:bg-zinc-900/60 border rounded-xl flex flex-col justify-between transition-all duration-300 shadow-sm dark:shadow-none hover:border-zinc-400 dark:hover:border-zinc-700 cursor-pointer ${
                     selectedTask?.id === task.id
-                      ? "border-purple-500/60 dark:border-purple-500/50 shadow-[0_0_15px_rgba(139,92,246,0.15)] ring-1 ring-purple-500/10"
+                      ? isDone
+                        ? "border-emerald-500/40 dark:border-emerald-500/30 bg-emerald-500/5 shadow-[0_0_15px_rgba(16,185,129,0.11)] ring-1 ring-emerald-500/10 opacity-85"
+                        : "border-purple-500/60 dark:border-purple-500/50 shadow-[0_0_15px_rgba(139,92,246,0.15)] ring-1 ring-purple-500/10"
                       : isDone 
                         ? "border-emerald-500/10 opacity-70 bg-zinc-50/50 dark:bg-zinc-950" 
                         : isWIP 
@@ -2219,134 +3083,152 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                           : "border-zinc-200 dark:border-zinc-800"
                   }`}
                 >
-                  {selectedTask?.id === task.id ? (
-                    /* EXPANDED VIEW IN-PLACE */
-                    <div className="space-y-4 text-left" onClick={(e) => e.stopPropagation()}>
-                      <div className="flex items-center justify-between pb-2.5 border-b border-zinc-150 dark:border-zinc-900">
-                        <div className="flex items-center gap-2">
-                          <span className="font-mono text-[8px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
-                            ID: #{task.id.substring(0, 5)}
-                          </span>
-                          {task.tab !== "general" && (
-                            <>
-                              <span className="text-zinc-200 dark:text-zinc-800 text-[8px]">|</span>
-                              <button
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFocusTask(task);
-                                }}
-                                className="text-purple-655 dark:text-purple-400 hover:underline font-bold font-mono text-[9px] cursor-pointer flex items-center gap-0.5"
-                              >
-                                Ir a Sección <ExternalLink className="w-2.5 h-2.5" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                        <span className="text-[9px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
-                          {getTabLabel(task.tab)}
-                        </span>
-                      </div>
-                      
-                      {renderTaskDetailContent(task)}
-                    </div>
-                  ) : (
-                    /* COMPACT VIEW */
-                    <>
-                      <div className="flex items-start gap-3">
-                        {/* Custom beautifully styled Checkbox */}
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleToggleComplete(task);
-                          }}
-                          className={`mt-0.5 w-4.5 h-4.5 rounded-lg border flex items-center justify-center cursor-pointer transition-all shrink-0 ${
-                            isDone
-                              ? "bg-emerald-500 border-emerald-400 text-zinc-950 shadow-inner"
-                              : "border-zinc-300 dark:border-zinc-700 hover:border-purple-500 hover:bg-zinc-50 dark:hover:bg-zinc-850"
-                          }`}
-                        >
-                          {isDone && <Check className="w-3.5 h-3.5 stroke-[3.5]" />}
-                        </button>
-
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5 flex-wrap">
-                            {/* AI Task Badge */}
-                            {(task.title.startsWith("[IA: Listo para verificar") || task.title.startsWith("[IA: Ajustes Solicitados]") || task.title.startsWith("[IA: Sugerencia de Diseño]")) && (
-                              <span className="px-1.5 py-0.5 rounded-md text-[7px] font-black border uppercase font-mono bg-purple-500/15 text-purple-500 dark:text-purple-400 border-purple-500/25 flex items-center gap-1 shrink-0">
-                                <Sparkles className="w-2.5 h-2.5" /> IA
+                  <AnimatePresence mode="wait">
+                    {selectedTask?.id === task.id ? (
+                      /* EXPANDED VIEW IN-PLACE */
+                      <motion.div
+                        key="expanded"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="space-y-4 text-left"
+                        onClick={(e) => e.stopPropagation()}
+                      >
+                        <div className="flex items-center justify-between pb-2.5 border-b border-zinc-150 dark:border-zinc-900">
+                          <div className="flex items-center gap-2">
+                            {task.createdAt && (
+                              <span className="font-mono text-[9px] text-zinc-450 dark:text-zinc-500 font-bold uppercase tracking-wider">
+                                {formatDate(task.createdAt)}
                               </span>
                             )}
-                            <h4 className={`text-xs font-bold text-zinc-950 dark:text-white truncate ${isDone ? "line-through text-zinc-400 dark:text-zinc-600" : ""}`}>
-                              {task.title.replace(/\[IA: [^\]]+\]\s*/, "")}
-                            </h4>
-                            <span className={`px-1.5 py-0.5 rounded-md text-[8px] font-bold border uppercase font-mono ${getPriorityColor(task.priority)}`}>
-                              {task.priority}
-                            </span>
-                            <span className="px-1.5 py-0.5 rounded-md text-[8px] bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
-                              {getTabLabel(task.tab)}
-                            </span>
+                            {task.tab !== "general" && (
+                              <>
+                                <span className="text-zinc-200 dark:text-zinc-800 text-[8px]">|</span>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleFocusTask(task);
+                                  }}
+                                  className="text-purple-600 dark:text-purple-400 hover:underline font-bold font-mono text-[9px] cursor-pointer flex items-center gap-0.5"
+                                >
+                                  Ir a Sección <ExternalLink className="w-2.5 h-2.5" />
+                                </button>
+                              </>
+                            )}
                           </div>
-                          {task.description && (
-                            <p className={`text-[10px] text-zinc-650 dark:text-zinc-350 font-normal mt-1.5 leading-relaxed break-words ${isDone ? "line-through text-zinc-500 dark:text-zinc-600" : ""}`}>
-                              {task.description}
-                            </p>
-                          )}
-                          {/* Inline Preview Button for AI Tasks */}
-                          {task.title.startsWith("[IA: Listo para verificar") && (
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                handlePreviewTask(task.id);
-                              }}
-                              disabled={isSubmittingPreviewAction}
-                              className="mt-2.5 w-full bg-gradient-to-r from-purple-600/90 to-indigo-600/90 hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50 text-white font-bold px-3 py-2 rounded-xl text-[10px] transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-[0.98] shadow-[0_2px_10px_rgba(139,92,246,0.2)] border border-purple-500/15"
-                            >
-                              <Sparkles className="w-3 h-3" /> Probar en Vivo
-                            </button>
-                          )}
+                          <span className="text-[9px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
+                            {getTabLabel(task.tab)}
+                          </span>
                         </div>
-                      </div>
+                        
+                        {renderTaskDetailContent(task)}
+                      </motion.div>
+                    ) : (
+                      /* COMPACT VIEW */
+                      <motion.div
+                        key="compact"
+                        initial={{ opacity: 0 }}
+                        animate={{ opacity: 1 }}
+                        exit={{ opacity: 0 }}
+                        transition={{ duration: 0.15 }}
+                        className="relative group/card"
+                      >
+                        <div className="flex items-start gap-2.5 pr-14"> {/* Leave space for top-right actions */}
+                          {/* Custom beautifully styled Checkbox */}
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleToggleComplete(task);
+                            }}
+                            className={`mt-0.5 w-4.5 h-4.5 rounded-md border flex items-center justify-center cursor-pointer transition-all shrink-0 ${
+                              isDone
+                                ? "bg-emerald-500 border-emerald-400 text-zinc-950 shadow-inner"
+                                : "border-zinc-300 dark:border-zinc-700 hover:border-purple-500 hover:bg-zinc-50 dark:hover:bg-zinc-850"
+                            }`}
+                          >
+                            {isDone && <Check className="w-3.5 h-3.5 stroke-[3.5]" />}
+                          </button>
 
-                      {/* Footer Actions */}
-                      <div className="mt-3.5 pt-3 border-t border-zinc-150 dark:border-zinc-800/80 flex items-center justify-between text-[9px] font-mono text-zinc-455 dark:text-zinc-555">
-                        <span className="flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-zinc-400 dark:text-zinc-600" />
-                          {new Date(task.createdAt).toLocaleDateString()}
-                        </span>
-                        <div className="flex items-center gap-2">
-                          {task.tab !== "general" && (
-                            <>
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-1.5 flex-wrap pr-1">
+                              {/* AI Task Badge */}
+                              {(task.title.startsWith("[IA: Listo para verificar") || task.title.startsWith("[IA: Ajustes Solicitados]") || task.title.startsWith("[IA: Sugerencia de Diseño]")) && (
+                                <span className="px-1.5 py-0.5 rounded bg-purple-500/15 text-purple-500 dark:text-purple-400 border border-purple-500/25 flex items-center gap-0.5 text-[7px] font-black uppercase font-mono shrink-0">
+                                  <Sparkles className="w-2 h-2 animate-pulse" /> IA
+                                </span>
+                              )}
+                              <h4 className={`text-xs font-bold text-zinc-950 dark:text-white truncate max-w-[130px] ${isDone ? "line-through text-zinc-400 dark:text-zinc-600" : ""}`}>
+                                {task.title.replace(/\[IA: [^\]]+\]\s*/, "")}
+                              </h4>
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border uppercase font-mono ${getPriorityColor(task.priority)}`}>
+                                {task.priority}
+                              </span>
+                              <span className="px-1.5 py-0.5 rounded text-[8px] bg-zinc-100 dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 text-zinc-600 dark:text-zinc-400 font-bold font-mono">
+                                {getTabLabel(task.tab)}
+                              </span>
+                            </div>
+                            {task.description && (
+                              <p className={`text-[10px] text-zinc-650 dark:text-zinc-350 font-normal mt-1 leading-relaxed break-words ${isDone ? "line-through text-zinc-500 dark:text-zinc-600" : ""}`}>
+                                {task.description.length > 105 
+                                  ? `${task.description.substring(0, 105)}...` 
+                                  : task.description}
+                              </p>
+                            )}
+                            {/* Inline Preview Button for AI Tasks */}
+                            {task.title.startsWith("[IA: Listo para verificar") && (
                               <button
                                 onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleFocusTask(task);
+                                    e.stopPropagation();
+                                    handlePreviewTask(task.id);
                                 }}
-                                className="text-purple-655 dark:text-purple-400 hover:underline hover:text-purple-750 dark:hover:text-purple-300 font-bold cursor-pointer flex items-center gap-0.5"
+                                disabled={isSubmittingPreviewAction}
+                                className="mt-2 w-full bg-gradient-to-r from-purple-600/90 to-indigo-600/90 hover:from-purple-600 hover:to-indigo-600 disabled:opacity-50 text-white font-bold px-2.5 py-1 rounded-lg text-[9px] transition-all cursor-pointer flex items-center justify-center gap-1 active:scale-[0.98] border border-purple-500/15"
                               >
-                                Ir a Sección <ExternalLink className="w-2.5 h-2.5" />
+                                <Sparkles className="w-2.5 h-2.5 animate-pulse" /> Probar en Vivo
                               </button>
-                              <span className="text-zinc-200 dark:text-zinc-800">|</span>
-                            </>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Top-Right Absolute Floating Actions */}
+                        <div 
+                          className="absolute right-0 top-0 flex items-center gap-1"
+                        >
+                          {task.tab !== "general" && (
+                            <button
+                              type="button"
+                              title={`Ir a Sección ${getTabLabel(task.tab)}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleFocusTask(task);
+                              }}
+                              className="w-5 h-5 rounded bg-zinc-50 hover:bg-purple-500/15 text-zinc-450 hover:text-purple-600 dark:bg-zinc-950 dark:border dark:border-zinc-900 dark:hover:bg-purple-950/40 dark:hover:text-purple-400 transition-all border border-zinc-150 cursor-pointer flex items-center justify-center"
+                            >
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
                           )}
                           <button
+                            type="button"
+                            title="Eliminar tarea"
                             onClick={(e) => {
                               e.stopPropagation();
                               handleDeleteTask(task.id);
                             }}
-                            className="text-zinc-400 hover:text-rose-500 dark:text-zinc-655 dark:hover:text-rose-400 p-0.5 rounded hover:bg-zinc-50 dark:hover:bg-zinc-850 cursor-pointer"
+                            className="w-5 h-5 rounded bg-zinc-50 hover:bg-rose-500/10 text-zinc-450 hover:text-rose-500 dark:bg-zinc-950 dark:border dark:border-zinc-900 dark:hover:bg-rose-950/40 dark:hover:text-rose-400 transition-all border border-zinc-150 cursor-pointer flex items-center justify-center"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
+                            <Trash2 className="w-2.5 h-2.5" />
                           </button>
                         </div>
-                      </div>
-                    </>
-                  )}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
                 </motion.div>
               );
             })
           )}
         </div>
-
       </>
     );
   };
@@ -2355,10 +3237,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
   return (
     <>
       {/* 3. Interactive Pins Rendered over the Active Tab elements */}
-      {isActive && mainRef.current && (
-        <div className="absolute inset-0 z-[80] pointer-events-none overflow-hidden select-none dev-mode-ui">
-          {tasks
-            .filter(task => task && task.tab === activeTab && task.x !== undefined && task.y !== undefined)
+      {isActive && mainRef.current && createPortal(
+        <div className="absolute inset-0 z-[80] pointer-events-none overflow-visible select-none dev-mode-ui">
+          {filteredTasks
+            .filter(task => task && task.tab === activeTab && task.x !== undefined && task.y !== undefined && task.status !== "done")
             .map(task => {
               const isHigh = task.priority === "high";
               const isMed = task.priority === "medium";
@@ -2416,7 +3298,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         e.preventDefault();
                         e.stopPropagation();
                         setSelectedTask(task);
-                        setIsEditingTask(false);
+                        startEditing(task);
+                        setShowMapPopover(true);
                       }}
                     >
                       {isDone ? (
@@ -2436,9 +3319,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       </div>
                     </div>
 
-                    {selectedTask?.id === task.id && (
+                    {selectedTask?.id === task.id && showMapPopover && (
                       <div 
-                        className={`absolute z-[100] w-[350px] max-w-[90vw] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-5 text-zinc-855 dark:text-zinc-200 pointer-events-auto select-none cursor-default ${
+                        className={`absolute z-[100] w-[350px] max-w-[90vw] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-5 text-zinc-800 dark:text-zinc-200 pointer-events-auto select-none cursor-default ${
                           task.y !== undefined && task.y > 70 ? "bottom-8" : "top-8"
                         } ${
                           task.x !== undefined && task.x > 50 ? "right-[-12px]" : "left-[-12px]"
@@ -2449,9 +3332,11 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       >
                         <div className="flex items-center justify-between mb-4 border-b border-zinc-200 dark:border-zinc-900 pb-3">
                           <div className="flex items-center gap-2">
-                            <span className="font-mono text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
-                              ID: #{task.id.substring(0, 5)}
-                            </span>
+                            {task.createdAt && (
+                              <span className="font-mono text-[9px] text-zinc-450 dark:text-zinc-500 font-bold uppercase tracking-wider">
+                                {formatDate(task.createdAt)}
+                              </span>
+                            )}
                             <span className="text-zinc-300 dark:text-zinc-700">|</span>
                             <span className="text-[10px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
                               {getTabLabel(task.tab)}
@@ -2496,7 +3381,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                     e.preventDefault();
                     e.stopPropagation();
                     setSelectedTask(task);
-                    setIsEditingTask(false);
+                    startEditing(task);
+                    setShowMapPopover(true);
                   }}
                 >
                   {/* Glowing pulsing halo */}
@@ -2540,9 +3426,9 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                     <span className="font-medium">{task.title}</span>
                   </div>
 
-                  {selectedTask?.id === task.id && (
+                  {selectedTask?.id === task.id && showMapPopover && (
                     <div 
-                      className={`absolute z-[100] w-[350px] max-w-[90vw] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-5 text-zinc-855 dark:text-zinc-200 pointer-events-auto select-none cursor-default ${
+                      className={`absolute z-[100] w-[350px] max-w-[90vw] bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl shadow-2xl p-5 text-zinc-800 dark:text-zinc-200 pointer-events-auto select-none cursor-default ${
                         task.y !== undefined && task.y > 70 ? "bottom-8" : "top-8"
                       } ${
                         task.x !== undefined && task.x > 50 ? "right-[-12px]" : "left-[-12px]"
@@ -2553,9 +3439,11 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                     >
                       <div className="flex items-center justify-between mb-4 border-b border-zinc-200 dark:border-zinc-900 pb-3">
                         <div className="flex items-center gap-2">
-                          <span className="font-mono text-[9px] text-zinc-400 dark:text-zinc-500 font-bold uppercase tracking-wider">
-                            ID: #{task.id.substring(0, 5)}
-                          </span>
+                          {task.createdAt && (
+                            <span className="font-mono text-[9px] text-zinc-450 dark:text-zinc-500 font-bold uppercase tracking-wider">
+                              {formatDate(task.createdAt)}
+                            </span>
+                          )}
                           <span className="text-zinc-300 dark:text-zinc-700">|</span>
                           <span className="text-[10px] font-mono text-purple-650 dark:text-purple-400 font-bold capitalize">
                             {getTabLabel(task.tab)}
@@ -2617,7 +3505,8 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
               }
             })()
           )}
-        </div>
+        </div>,
+        mainRef.current
       )}
 
       {/* Portaled elements to document.body to ensure zero viewport shifting */}
@@ -2740,36 +3629,36 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                 <div className="absolute top-0 left-0 right-0 h-40 bg-radial from-purple-500/5 dark:from-purple-500/10 via-transparent to-transparent pointer-events-none -z-10" />
 
                 {/* Sidebar Header */}
-                <div className="p-5 border-b border-zinc-200/60 dark:border-zinc-900 flex items-center justify-between shrink-0">
+                <div className="py-2.5 px-4 border-b border-zinc-200/60 dark:border-zinc-900 flex items-center justify-between shrink-0">
                   <div>
-                    <h3 className="font-bold text-sm tracking-tight text-zinc-950 dark:text-white flex items-center gap-2">
-                      <ClipboardList className="w-4 h-4 text-purple-655 dark:text-purple-400" />
+                    <h3 className="font-bold text-xs tracking-tight text-zinc-950 dark:text-white flex items-center gap-1.5">
+                      <ClipboardList className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                       Tablero de Desarrollo
                     </h3>
-                    <p className="text-[10px] font-mono text-zinc-500 mt-0.5">
+                    <p className="text-[9px] font-mono text-zinc-450 dark:text-zinc-500 mt-0.5">
                       Comentarios y tareas pendientes locales
                     </p>
                   </div>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {/* Pop out to floating mode */}
                     <button
                       onClick={() => {
                         setLayoutMode("floating");
                         setIsSidebarOpen(true);
                       }}
-                      className="text-zinc-400 hover:text-purple-650 dark:hover:text-purple-400 p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-purple-650 dark:hover:text-purple-400 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors cursor-pointer"
                       title="Cambiar a Ventana Flotante"
                     >
-                      <Layers className="w-4 h-4" />
+                      <Layers className="w-3.5 h-3.5" />
                     </button>
 
                     <button
                       onClick={() => setIsSidebarMinimized(true)}
-                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors cursor-pointer"
                       title="Minimizar Tablero"
                     >
-                      <Minimize2 className="w-4 h-4" />
+                      <Minimize2 className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2778,10 +3667,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         setIsSidebarOpen(false);
                         setIsPinningMode(false);
                       }}
-                      className="text-zinc-400 hover:text-rose-500 dark:text-zinc-555 dark:hover:text-rose-400 p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-rose-500 dark:text-zinc-500 dark:hover:text-rose-400 p-1 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
                       title="Desactivar Modo Desarrollador"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2817,38 +3706,38 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                 {/* Sidebar Header */}
                 <div 
                   onMouseDown={handleHeaderMouseDown}
-                  className="p-5 border-b border-zinc-200/60 dark:border-zinc-900 flex items-center justify-between cursor-grab active:cursor-grabbing shrink-0"
+                  className="py-2.5 px-4 border-b border-zinc-200/60 dark:border-zinc-900 flex items-center justify-between cursor-grab active:cursor-grabbing shrink-0"
                   title="Arrastra desde el cabecero para mover"
                 >
                   <div>
-                    <h3 className="font-bold text-sm tracking-tight text-zinc-950 dark:text-white flex items-center gap-2">
-                      <ClipboardList className="w-4 h-4 text-purple-655 dark:text-purple-400" />
+                    <h3 className="font-bold text-xs tracking-tight text-zinc-950 dark:text-white flex items-center gap-1.5">
+                      <ClipboardList className="w-3.5 h-3.5 text-purple-600 dark:text-purple-400" />
                       Tablero de Desarrollo
                     </h3>
-                    <p className="text-[10px] font-mono text-zinc-500 mt-0.5">
+                    <p className="text-[9px] font-mono text-zinc-450 dark:text-zinc-500 mt-0.5">
                       Comentarios y tareas pendientes locales
                     </p>
                   </div>
                   
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5">
                     {/* Dock to sidebar mode */}
                     <button
                       onClick={() => {
                         setLayoutMode("sidebar");
                         setIsSidebarOpen(true);
                       }}
-                      className="text-zinc-400 hover:text-purple-650 dark:hover:text-purple-400 p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-purple-650 dark:hover:text-purple-400 p-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors cursor-pointer"
                       title="Anclar a Barra Lateral"
                     >
-                      <Layers className="w-4 h-4" />
+                      <Layers className="w-3.5 h-3.5" />
                     </button>
 
                     <button
                       onClick={() => setIsSidebarMinimized(true)}
-                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1.5 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-zinc-900 dark:hover:text-white p-1 hover:bg-zinc-100 dark:hover:bg-zinc-900 rounded-lg transition-colors cursor-pointer"
                       title="Minimizar Tablero"
                     >
-                      <Minimize2 className="w-4 h-4" />
+                      <Minimize2 className="w-3.5 h-3.5" />
                     </button>
 
                     <button
@@ -2857,10 +3746,10 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         setIsSidebarOpen(false);
                         setIsPinningMode(false);
                       }}
-                      className="text-zinc-400 hover:text-rose-500 dark:text-zinc-555 dark:hover:text-rose-400 p-1.5 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-xl transition-colors cursor-pointer"
+                      className="text-zinc-400 hover:text-rose-500 dark:text-zinc-500 dark:hover:text-rose-400 p-1 hover:bg-rose-50 dark:hover:bg-rose-950/30 rounded-lg transition-colors cursor-pointer"
                       title="Desactivar Modo Desarrollador"
                     >
-                      <X className="w-4 h-4" />
+                      <X className="w-3.5 h-3.5" />
                     </button>
                   </div>
                 </div>
@@ -2899,7 +3788,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                   className={`flex items-center gap-2.5 flex-1 min-w-0 pr-3 ${layoutMode === "floating" ? "cursor-grab active:cursor-grabbing" : ""}`}
                   title={layoutMode === "floating" ? "Arrastra para mover" : undefined}
                 >
-                  <ClipboardList className="w-4.5 h-4.5 text-purple-655 dark:text-purple-400 shrink-0" />
+                  <ClipboardList className="w-4.5 h-4.5 text-purple-600 dark:text-purple-400 shrink-0" />
                   <div className="flex flex-col min-w-0">
                     <h4 className="font-bold text-xs tracking-tight text-zinc-950 dark:text-white flex items-center gap-1.5 leading-none">
                       Tablero Dev
@@ -2910,7 +3799,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         {tasks.filter(t => t && t.status !== 'done').length} pend. | Última: "{tasks.filter(t => t && t.status !== 'done')[0]?.title || ''}"
                       </span>
                     ) : (
-                      <span className="text-[9px] font-mono text-zinc-455 dark:text-zinc-555 mt-1">
+                      <span className="text-[9px] font-mono text-zinc-500 dark:text-zinc-500 mt-1">
                         Sin notas pendientes
                       </span>
                     )}
@@ -3002,6 +3891,12 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         placeholder="Detalles sobre lo que se debe cambiar, corregir o refinar en esta sección específica..."
                         value={formDesc}
                         onChange={(e) => setFormDesc(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                            e.preventDefault();
+                            e.currentTarget.form?.requestSubmit();
+                          }
+                        }}
                         rows={3}
                         className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 focus:border-zinc-500 dark:focus:border-zinc-700 focus:ring-1 focus:ring-zinc-200 dark:focus:ring-zinc-800 rounded-2xl px-4 py-3 text-xs text-zinc-900 dark:text-white outline-none transition-all placeholder:text-zinc-400 dark:placeholder-zinc-700 resize-none leading-relaxed"
                       />
@@ -3016,7 +3911,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                         <select
                           value={formPriority}
                           onChange={(e) => setFormPriority(e.target.value as any)}
-                          className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-2xl px-3 py-3 text-xs text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500"
+                          className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-2xl px-3 py-3 text-xs text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500 dark:[&>option]:bg-zinc-950 dark:[&>option]:text-zinc-300"
                         >
                           <option value="low">Baja (Color Azul)</option>
                           <option value="normal">Normal (Color Gris)</option>
@@ -3034,7 +3929,7 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                           value={formTab}
                           disabled={!isCreatingGeneral}
                           onChange={(e) => setFormTab(e.target.value)}
-                          className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-2xl px-3 py-3 text-xs text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500 disabled:opacity-50"
+                          className="w-full bg-white dark:bg-zinc-950/60 border border-zinc-300 dark:border-zinc-800 rounded-2xl px-3 py-3 text-xs text-zinc-700 dark:text-zinc-350 focus:outline-none focus:border-purple-500 disabled:opacity-50 dark:[&>option]:bg-zinc-950 dark:[&>option]:text-zinc-300"
                         >
                           <option value="general">General (Sin pin)</option>
                           <option value="grafo">Conceptos</option>
@@ -3092,44 +3987,45 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
             </AnimatePresence>
 
           {/* 6. AI Preview Mode Floating Top Bar */}
+          {/* 6. AI Preview Mode Floating Capsule */}
           {activePreviewTaskId && (() => {
             const activePreviewTask = tasks.find(t => t.id === activePreviewTaskId);
             return (
-              <div className="fixed top-0 left-0 right-0 z-[9999] bg-zinc-950/90 dark:bg-zinc-950/95 backdrop-blur-xl border-b border-purple-500/25 px-6 py-3.5 shadow-[0_10px_40px_rgba(0,0,0,0.5)] flex items-center justify-between text-white font-sans transition-all select-none dev-mode-ui animate-in slide-in-from-top duration-300">
-                <div className="flex items-center gap-3.5">
-                  <div className="relative flex h-3 w-3">
-                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                    <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500 shadow-[0_0_10px_#10b981]"></span>
+              <div className="fixed bottom-6 left-6 z-[9999] max-w-[calc(100vw-3rem)] w-full sm:w-[450px] bg-zinc-950/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-purple-500/25 p-4 rounded-3xl shadow-[0_15px_45px_rgba(0,0,0,0.55)] flex flex-col gap-3 text-white font-sans transition-all select-none dev-mode-ui animate-in slide-in-from-bottom duration-300">
+                <div className="flex flex-col text-left">
+                  <div className="flex items-center gap-2">
+                    <div className="relative flex h-2 w-2">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500 shadow-[0_0_8px_#10b981]"></span>
+                    </div>
+                    <span className="text-[8px] font-black font-mono tracking-widest text-purple-400 uppercase">PREVISUALIZACIÓN DE LA IA</span>
                   </div>
-                  <div className="flex flex-col text-left">
-                    <span className="text-[9px] font-black font-mono tracking-widest text-purple-400 uppercase">MODO PREVISUALIZACIÓN ACTIVO</span>
-                    <span className="text-xs font-bold text-zinc-100 max-w-sm sm:max-w-lg md:max-w-xl truncate">
-                      {activePreviewTask ? activePreviewTask.title.replace(/\[IA:.*\]\s*/, "") : "Cargando propuesta de la IA..."}
-                    </span>
-                  </div>
+                  <span className="text-xs font-bold text-zinc-100 truncate mt-1">
+                    {activePreviewTask ? activePreviewTask.title.replace(/\[IA:.*\]\s*/, "") : "Cargando propuesta..."}
+                  </span>
                 </div>
 
-                <div className="flex items-center gap-2.5">
+                <div className="flex flex-wrap items-center gap-2 mt-1">
                   <button
                     onClick={() => handleApproveTask(activePreviewTaskId)}
                     disabled={isSubmittingPreviewAction}
-                    className="bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 shadow-[0_2px_8px_rgba(16,185,129,0.2)] border border-emerald-500/20"
+                    className="flex-1 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold px-3.5 py-2.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 shadow-[0_2px_8px_rgba(16,185,129,0.2)] border border-emerald-500/20"
                   >
-                    <Check className="w-3.5 h-3.5 stroke-[3]" /> Quedármela
+                    <Check className="w-3 h-3 stroke-[3]" /> Aceptar
                   </button>
                   <button
                     onClick={() => setFeedbackTaskId(activePreviewTaskId)}
                     disabled={isSubmittingPreviewAction}
-                    className="bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-100 font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border border-zinc-700"
+                    className="flex-1 bg-zinc-800 hover:bg-zinc-700 disabled:opacity-50 text-zinc-100 font-bold px-3.5 py-2.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 border border-zinc-700"
                   >
-                    <MessageSquare className="w-3.5 h-3.5 text-purple-400" /> Solicitar Ajustes
+                    <MessageSquare className="w-3 h-3 text-purple-400" /> Ajustar
                   </button>
                   <button
                     onClick={() => handleRejectTask(activePreviewTaskId)}
                     disabled={isSubmittingPreviewAction}
-                    className="bg-rose-950/40 hover:bg-rose-900/60 disabled:opacity-50 text-rose-300 font-bold px-4 py-2 rounded-xl text-xs transition-all cursor-pointer flex items-center gap-1.5 active:scale-95 border border-rose-500/20"
+                    className="bg-rose-950/40 hover:bg-rose-900/60 disabled:opacity-50 text-rose-300 font-bold px-3.5 py-2.5 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1.5 active:scale-95 border border-rose-500/20"
                   >
-                    <X className="w-3.5 h-3.5" /> Descartar
+                    <X className="w-3 h-3" /> Descartar
                   </button>
                 </div>
               </div>
@@ -3164,6 +4060,12 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
                       placeholder="Ej: El botón funciona genial, pero me gustaría que el fondo sea violeta oscuro (#4c1d95) en lugar de azul, y el padding sea un poco más grande."
                       value={previewFeedbackText}
                       onChange={(e) => setPreviewFeedbackText(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+                          e.preventDefault();
+                          handleFeedbackTask(feedbackTaskId, previewFeedbackText);
+                        }
+                      }}
                       rows={4}
                       className="w-full bg-zinc-950 border border-zinc-800 focus:border-purple-500/50 rounded-2xl p-4 text-xs text-white placeholder-zinc-600 outline-none transition-all resize-none leading-relaxed"
                     />
@@ -3192,6 +4094,50 @@ export default function DevModeOverlay({ activeTab, setActiveTab }: DevModeOverl
               </div>
             );
           })()}
+          {/* Floating premium undo toast in Portal Root */}
+          <AnimatePresence>
+            {pendingDeleteTask && (
+              <motion.div
+                initial={{ opacity: 0, y: 20, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: 15, scale: 0.95 }}
+                transition={{ duration: 0.25, ease: "easeOut" }}
+                className="fixed bottom-6 right-20 z-[9999] bg-zinc-950/95 dark:bg-zinc-900/95 backdrop-blur-xl border border-zinc-800/80 dark:border-zinc-800 rounded-3xl p-3.5 shadow-2xl flex flex-col pointer-events-auto select-none w-full max-w-[calc(100vw-8rem)] sm:w-[340px]"
+              >
+                <div className="flex items-center justify-between gap-3 text-left">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-8 h-8 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400 shrink-0">
+                      <Trash2 className="w-4 h-4 animate-pulse" />
+                    </div>
+                    <div className="flex flex-col min-w-0">
+                      <span className="text-[10px] font-bold text-zinc-100 uppercase tracking-wider font-mono">Nota eliminada</span>
+                      <span className="text-xs text-zinc-400 truncate max-w-[160px] font-medium leading-tight">
+                        {pendingDeleteTask.title || "Sin título"}
+                      </span>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleUndoDelete}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-black px-4 py-2 rounded-xl text-[10px] uppercase font-mono tracking-wider transition-all cursor-pointer flex items-center gap-1 hover:scale-[1.03] active:scale-[0.98] shadow-[0_2px_10px_rgba(147,51,234,0.3)] shrink-0"
+                  >
+                    Deshacer
+                  </button>
+                </div>
+
+                {/* Progress Bar indicator */}
+                <div className="absolute bottom-0 left-0 right-0 h-1 bg-zinc-850 rounded-b-3xl overflow-hidden">
+                  <motion.div
+                    initial={{ width: "100%" }}
+                    animate={{ width: "0%" }}
+                    transition={{ duration: 5, ease: "linear" }}
+                    className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-r-full"
+                  />
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </>,
         document.body
       )}

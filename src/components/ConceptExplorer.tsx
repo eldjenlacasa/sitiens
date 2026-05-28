@@ -92,11 +92,18 @@ export default function ConceptExplorer({ initialNodeId, onClearInitialNodeId }:
   };
 
   const filteredNodes = CORE_NODES.filter((node) => {
+    if (!node) return false;
+    const q = (searchQuery || "").toLowerCase();
+    const title = (node.title || "").toLowerCase();
+    const shortDesc = (node.shortDesc || "").toLowerCase();
+    const longDesc = (node.longDesc || "").toLowerCase();
+    const facts = Array.isArray(node.scientificFacts) ? node.scientificFacts : [];
+
     const matchesSearch = 
-      node.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      node.shortDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      node.longDesc.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      node.scientificFacts.some(fact => fact.toLowerCase().includes(searchQuery.toLowerCase()));
+      title.includes(q) ||
+      shortDesc.includes(q) ||
+      longDesc.includes(q) ||
+      facts.some(fact => (fact || "").toLowerCase().includes(q));
       
     const matchesCategory = selectedCategory === "all" || node.category === selectedCategory;
 
